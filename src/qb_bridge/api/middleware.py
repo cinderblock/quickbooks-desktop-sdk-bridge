@@ -61,7 +61,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
         duration_ms = (time.monotonic() - start) * 1000
         log.info(
-            "%s %s %s → %d (%.1fms)",
+            "%s %s %s -> %d (%.1fms)",
             client_ip,
             request.method,
             request.url.path,
