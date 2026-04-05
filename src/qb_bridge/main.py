@@ -29,10 +29,12 @@ def _setup_logging(settings: Settings) -> None:
 
     # Console handler
     console = logging.StreamHandler(sys.stdout)
-    console.setFormatter(logging.Formatter(
-        "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    ))
+    console.setFormatter(
+        logging.Formatter(
+            "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
     root_logger.addHandler(console)
 
     # File handler
@@ -40,16 +42,19 @@ def _setup_logging(settings: Settings) -> None:
     if log_dir:
         log_dir.mkdir(parents=True, exist_ok=True)
         from logging.handlers import RotatingFileHandler
+
         file_handler = RotatingFileHandler(
             log_dir / "qbbridge.log",
             maxBytes=10 * 1024 * 1024,  # 10 MB
             backupCount=5,
             encoding="utf-8",
         )
-        file_handler.setFormatter(logging.Formatter(
-            "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        ))
+        file_handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+        )
         root_logger.addHandler(file_handler)
 
 
@@ -84,7 +89,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         log.info(
             "QuickBooks Bridge v%s started on %s:%d",
-            __version__, settings.host, settings.port,
+            __version__,
+            settings.host,
+            settings.port,
         )
 
         yield
@@ -120,6 +127,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # GUI routes (lazy import to avoid circular deps)
     try:
         from qb_bridge.gui.router import gui_router
+
         app.include_router(gui_router)
 
         # Static files for GUI
@@ -133,21 +141,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 # ---------------------------------------------------------------------------
+# Module-level app instance for uvicorn (e.g. ``uvicorn qb_bridge.main:app``)
+# ---------------------------------------------------------------------------
+
+app = create_app()
+
+
+# ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
+
 
 def cli() -> None:
     """Run the server directly (for development)."""
     import uvicorn
 
     settings = get_settings()
-    app = create_app(settings)
 
     uvicorn.run(
-        app,
+        "qb_bridge.main:app",
         host=settings.host,
         port=settings.port,
         log_level=settings.log_level.lower(),
+        reload=False,
     )
 
 

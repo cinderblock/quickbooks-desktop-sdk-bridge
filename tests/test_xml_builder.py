@@ -105,11 +105,14 @@ class TestAddBuilder:
 
 class TestModBuilder:
     def test_mod(self):
-        xml = xml_builder.mod("Customer", {
-            "ListID": "ABC-123",
-            "EditSequence": "999",
-            "Name": "Updated Co",
-        })
+        xml = xml_builder.mod(
+            "Customer",
+            {
+                "ListID": "ABC-123",
+                "EditSequence": "999",
+                "Name": "Updated Co",
+            },
+        )
         assert "CustomerModRq" in xml
         root = _parse(xml)
         mod_elem = root.find(".//CustomerMod")

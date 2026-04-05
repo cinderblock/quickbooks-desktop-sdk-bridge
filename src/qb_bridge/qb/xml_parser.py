@@ -16,6 +16,7 @@ log = logging.getLogger(__name__)
 # Data models
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class QBResponse:
     """Parsed result of a qbXML response."""
@@ -58,6 +59,7 @@ class ReportData:
 # Parsing helpers
 # ---------------------------------------------------------------------------
 
+
 def _elem_to_dict(elem: etree._Element) -> dict | str:
     """Recursively convert an XML element to a dict.
 
@@ -92,7 +94,9 @@ def check_status(xml_string: str) -> tuple[int, str, str]:
 
     Raises ``QBRequestError`` if severity is ``"Error"``.
     """
-    root = etree.fromstring(xml_string.encode("utf-8") if isinstance(xml_string, str) else xml_string)
+    root = etree.fromstring(
+        xml_string.encode("utf-8") if isinstance(xml_string, str) else xml_string
+    )
     msgs = root.find("QBXMLMsgsRs")
     if msgs is None:
         raise QBRequestError("Invalid qbXML response: no QBXMLMsgsRs element")
@@ -110,7 +114,9 @@ def check_status(xml_string: str) -> tuple[int, str, str]:
 
 def parse_response(xml_string: str) -> QBResponse:
     """Parse a complete qbXML response into a ``QBResponse``."""
-    root = etree.fromstring(xml_string.encode("utf-8") if isinstance(xml_string, str) else xml_string)
+    root = etree.fromstring(
+        xml_string.encode("utf-8") if isinstance(xml_string, str) else xml_string
+    )
     msgs = root.find("QBXMLMsgsRs")
     if msgs is None:
         raise QBRequestError("Invalid qbXML response: no QBXMLMsgsRs element")
@@ -176,9 +182,12 @@ def parse_single_entity(xml_string: str, entity_type: str) -> dict | None:
 # Report parsing
 # ---------------------------------------------------------------------------
 
+
 def parse_report(xml_string: str) -> ReportData:
     """Parse a QB report response into structured ``ReportData``."""
-    root = etree.fromstring(xml_string.encode("utf-8") if isinstance(xml_string, str) else xml_string)
+    root = etree.fromstring(
+        xml_string.encode("utf-8") if isinstance(xml_string, str) else xml_string
+    )
     msgs = root.find("QBXMLMsgsRs")
     if msgs is None:
         raise QBRequestError("Invalid report response: no QBXMLMsgsRs")
@@ -232,9 +241,7 @@ def _parse_report_rows(parent: etree._Element) -> list[ReportRow]:
             row_data = child.find("RowData")
             if row_data is not None:
                 row.label = row_data.get("value", "")
-                row.values = {
-                    int(row_data.get("colID", "0")): row_data.get("value", "")
-                }
+                row.values = {int(row_data.get("colID", "0")): row_data.get("value", "")}
 
             # Column values
             for col_data in child.findall("ColData"):

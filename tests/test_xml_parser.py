@@ -2,19 +2,16 @@
 
 import pytest
 
+from qb_bridge.qb.exceptions import QBRequestError
 from qb_bridge.qb.xml_parser import (
-    QBResponse,
-    ReportData,
     check_status,
     parse_entity_list,
     parse_report,
     parse_response,
     parse_single_entity,
 )
-from qb_bridge.qb.exceptions import QBRequestError
 
-
-SAMPLE_ACCOUNT_RESPONSE = '''<?xml version="1.0" ?>
+SAMPLE_ACCOUNT_RESPONSE = """<?xml version="1.0" ?>
 <QBXML>
 <QBXMLMsgsRs>
 <AccountQueryRs requestID="1" statusCode="0" statusSeverity="Info" statusMessage="Status OK">
@@ -37,19 +34,19 @@ SAMPLE_ACCOUNT_RESPONSE = '''<?xml version="1.0" ?>
     </AccountRet>
 </AccountQueryRs>
 </QBXMLMsgsRs>
-</QBXML>'''
+</QBXML>"""
 
 
-SAMPLE_ERROR_RESPONSE = '''<?xml version="1.0" ?>
+SAMPLE_ERROR_RESPONSE = """<?xml version="1.0" ?>
 <QBXML>
 <QBXMLMsgsRs>
 <CustomerQueryRs requestID="1" statusCode="500" statusSeverity="Error" statusMessage="Could not find the specified record.">
 </CustomerQueryRs>
 </QBXMLMsgsRs>
-</QBXML>'''
+</QBXML>"""
 
 
-SAMPLE_ADD_RESPONSE = '''<?xml version="1.0" ?>
+SAMPLE_ADD_RESPONSE = """<?xml version="1.0" ?>
 <QBXML>
 <QBXMLMsgsRs>
 <CustomerAddRs requestID="1" statusCode="0" statusSeverity="Info" statusMessage="Status OK">
@@ -60,10 +57,10 @@ SAMPLE_ADD_RESPONSE = '''<?xml version="1.0" ?>
     </CustomerRet>
 </CustomerAddRs>
 </QBXMLMsgsRs>
-</QBXML>'''
+</QBXML>"""
 
 
-SAMPLE_REPORT_RESPONSE = '''<?xml version="1.0" ?>
+SAMPLE_REPORT_RESPONSE = """<?xml version="1.0" ?>
 <QBXML>
 <QBXMLMsgsRs>
 <GeneralSummaryReportQueryRs requestID="1" statusCode="0" statusSeverity="Info" statusMessage="Status OK">
@@ -97,7 +94,7 @@ SAMPLE_REPORT_RESPONSE = '''<?xml version="1.0" ?>
     </ReportRet>
 </GeneralSummaryReportQueryRs>
 </QBXMLMsgsRs>
-</QBXML>'''
+</QBXML>"""
 
 
 class TestCheckStatus:

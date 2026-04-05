@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import io
-from enum import Enum
+from enum import StrEnum
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
@@ -22,7 +22,8 @@ router = APIRouter(prefix="/api/v1/reports", tags=["Reports"])
 # Report definitions — maps URL slug to qbXML request type + report name
 # ---------------------------------------------------------------------------
 
-class ReportCategory(str, Enum):
+
+class ReportCategory(StrEnum):
     general_summary = "GeneralSummaryReportQueryRq"
     general_detail = "GeneralDetailReportQueryRq"
     aging = "AgingReportQueryRq"
@@ -32,24 +33,52 @@ class ReportCategory(str, Enum):
 REPORT_DEFS: dict[str, tuple[ReportCategory, str, str]] = {
     # slug: (category, qbxml_report_type, display_name)
     "profit-and-loss": (ReportCategory.general_summary, "ProfitAndLossStandard", "Profit & Loss"),
-    "profit-and-loss-detail": (ReportCategory.general_detail, "ProfitAndLossDetail", "Profit & Loss Detail"),
+    "profit-and-loss-detail": (
+        ReportCategory.general_detail,
+        "ProfitAndLossDetail",
+        "Profit & Loss Detail",
+    ),
     "balance-sheet": (ReportCategory.general_summary, "BalanceSheetStandard", "Balance Sheet"),
-    "balance-sheet-detail": (ReportCategory.general_detail, "BalanceSheetDetail", "Balance Sheet Detail"),
+    "balance-sheet-detail": (
+        ReportCategory.general_detail,
+        "BalanceSheetDetail",
+        "Balance Sheet Detail",
+    ),
     "trial-balance": (ReportCategory.general_summary, "TrialBalance", "Trial Balance"),
     "general-ledger": (ReportCategory.general_detail, "GeneralLedger", "General Ledger"),
     "ar-aging-summary": (ReportCategory.aging, "ARAgingSummary", "A/R Aging Summary"),
     "ar-aging-detail": (ReportCategory.aging, "ARAgingDetail", "A/R Aging Detail"),
     "ap-aging-summary": (ReportCategory.aging, "APAgingSummary", "A/P Aging Summary"),
     "ap-aging-detail": (ReportCategory.aging, "APAgingDetail", "A/P Aging Detail"),
-    "sales-by-customer": (ReportCategory.general_summary, "SalesByCustomerSummary", "Sales by Customer"),
+    "sales-by-customer": (
+        ReportCategory.general_summary,
+        "SalesByCustomerSummary",
+        "Sales by Customer",
+    ),
     "sales-by-item": (ReportCategory.general_summary, "SalesByItemSummary", "Sales by Item"),
-    "customer-balance": (ReportCategory.general_summary, "CustomerBalanceSummary", "Customer Balance"),
+    "customer-balance": (
+        ReportCategory.general_summary,
+        "CustomerBalanceSummary",
+        "Customer Balance",
+    ),
     "vendor-balance": (ReportCategory.general_summary, "VendorBalanceSummary", "Vendor Balance"),
-    "inventory-valuation": (ReportCategory.general_summary, "InventoryValuationSummary", "Inventory Valuation"),
+    "inventory-valuation": (
+        ReportCategory.general_summary,
+        "InventoryValuationSummary",
+        "Inventory Valuation",
+    ),
     "open-invoices": (ReportCategory.general_detail, "OpenInvoices", "Open Invoices"),
     "unpaid-bills": (ReportCategory.general_detail, "UnpaidBillsDetail", "Unpaid Bills"),
-    "income-by-customer": (ReportCategory.general_summary, "IncomeByCustomerSummary", "Income by Customer"),
-    "expense-by-vendor": (ReportCategory.general_summary, "ExpenseByVendorSummary", "Expense by Vendor"),
+    "income-by-customer": (
+        ReportCategory.general_summary,
+        "IncomeByCustomerSummary",
+        "Income by Customer",
+    ),
+    "expense-by-vendor": (
+        ReportCategory.general_summary,
+        "ExpenseByVendorSummary",
+        "Expense by Vendor",
+    ),
 }
 
 
@@ -60,14 +89,16 @@ REPORT_DEFS: dict[str, tuple[ReportCategory, str, str]] = {
 )
 async def list_reports():
     reports = []
-    for slug, (category, qb_type, display_name) in REPORT_DEFS.items():
-        reports.append({
-            "slug": slug,
-            "name": display_name,
-            "path": f"/api/v1/reports/{slug}",
-            "category": category.name,
-            "formats": ["json", "csv", "pdf"],
-        })
+    for slug, (category, _qb_type, display_name) in REPORT_DEFS.items():
+        reports.append(
+            {
+                "slug": slug,
+                "name": display_name,
+                "path": f"/api/v1/reports/{slug}",
+                "category": category.name,
+                "formats": ["json", "csv", "pdf"],
+            }
+        )
     return {"ok": True, "data": reports, "meta": {"count": len(reports)}}
 
 
@@ -90,7 +121,9 @@ async def get_report(
         description="Date preset: ThisMonth, LastMonth, ThisQuarter, ThisYear, LastYear, etc.",
     ),
     basis: Literal["Accrual", "Cash"] | None = Query(None, description="Accounting basis"),
-    summarize_by: str | None = Query(None, description="Summarize columns by: Month, Quarter, Year, TotalOnly"),
+    summarize_by: str | None = Query(
+        None, description="Summarize columns by: Month, Quarter, Year, TotalOnly"
+    ),
     format: Literal["json", "csv", "pdf"] = Query("json", description="Output format"),
 ):
     if report_slug not in REPORT_DEFS:
@@ -149,8 +182,7 @@ async def get_report(
             "subtitle": report_data.subtitle,
             "basis": report_data.basis,
             "columns": [
-                {"id": c.col_id, "type": c.col_type, "title": c.title}
-                for c in report_data.columns
+                {"id": c.col_id, "type": c.col_type, "title": c.title} for c in report_data.columns
             ],
             "rows": _rows_to_dicts(report_data.rows),
         },

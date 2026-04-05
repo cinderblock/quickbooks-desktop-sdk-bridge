@@ -39,6 +39,18 @@ packages = ["src/qb_bridge"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = [
+    "E501",  # line length handled by formatter
+    "B008",  # Depends() in defaults is standard FastAPI pattern
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

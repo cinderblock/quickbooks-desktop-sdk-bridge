@@ -105,6 +105,7 @@ def main() -> None:
         print("  Passwords don't match or too short (min 4 chars). Try again.")
 
     import bcrypt
+
     pw_hash = bcrypt.hashpw(pw1.encode(), bcrypt.gensalt()).decode()
     _set_setting(db, "gui_password_hash", pw_hash)
     print("  Password set.")
@@ -115,6 +116,7 @@ def main() -> None:
 
     import hashlib
     import secrets
+
     raw_key = "qbb_" + secrets.token_hex(32)
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
     key_prefix = raw_key[:12] + "..."
@@ -148,18 +150,23 @@ def main() -> None:
 
         try:
             from qb_bridge.service.install import install_with_user
+
             install_with_user(username, password)
             print("  Service installed!")
 
             start_svc = input("  Start the service now? (y/n): ").strip().lower()
             if start_svc == "y":
                 import subprocess
+
                 subprocess.run(["sc.exe", "start", "QBBridge"], capture_output=True)
                 time.sleep(3)
                 # Quick health check
                 try:
                     import urllib.request
-                    resp = urllib.request.urlopen(f"http://localhost:{port}/api/v1/status", timeout=5)
+
+                    resp = urllib.request.urlopen(
+                        f"http://localhost:{port}/api/v1/status", timeout=5
+                    )
                     print(f"  Service is running! (HTTP {resp.status})")
                 except Exception:
                     print("  Service started. It may take a few seconds to be ready.")
@@ -196,19 +203,20 @@ def _test_qb_connection() -> str:
         rp.OpenConnection2("QBBridge", "QuickBooks Bridge API", 1)
         ticket = rp.BeginSession("", 2)  # qbFileOpenDoNotCare
 
-        request = '''<?xml version="1.0" encoding="utf-8"?>
+        request = """<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="13.0"?>
 <QBXML>
   <QBXMLMsgsRq onError="stopOnError">
     <CompanyQueryRq>
     </CompanyQueryRq>
   </QBXMLMsgsRq>
-</QBXML>'''
+</QBXML>"""
 
         response = rp.ProcessRequest(ticket, request)
 
         # Parse company name
         import xml.etree.ElementTree as ET
+
         root = ET.fromstring(response)
         name_elem = root.find(".//CompanyName")
         company_name = name_elem.text if name_elem is not None else "Unknown"
@@ -279,8 +287,7 @@ def _init_schema(db: sqlite3.Connection) -> None:
 
 def _set_setting(db: sqlite3.Connection, key: str, value: str) -> None:
     db.execute(
-        "INSERT OR REPLACE INTO settings (key, value, updated_at) "
-        "VALUES (?, ?, datetime('now'))",
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))",
         (key, value),
     )
     db.commit()

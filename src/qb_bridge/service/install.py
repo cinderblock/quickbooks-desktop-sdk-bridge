@@ -9,6 +9,7 @@ import sys
 def main():
     """Dispatch to the service module's command-line handler."""
     from qb_bridge.service.svc import main as svc_main
+
     svc_main()
 
 
@@ -22,10 +23,15 @@ def install_with_user(username: str, password: str) -> None:
     svc_module = "qb_bridge.service.svc"
 
     cmd = [
-        python_exe, "-m", svc_module,
-        "--startup", "auto",
-        "--username", username,
-        "--password", password,
+        python_exe,
+        "-m",
+        svc_module,
+        "--startup",
+        "auto",
+        "--username",
+        username,
+        "--password",
+        password,
         "install",
     ]
     print(f"Installing service: {' '.join(cmd)}")
@@ -37,9 +43,13 @@ def install_with_user(username: str, password: str) -> None:
 
     # Configure failure recovery: restart after 60s
     sc_cmd = [
-        "sc.exe", "failure", "QBBridge",
-        "reset=", "86400",
-        "actions=", "restart/60000/restart/60000/restart/60000",
+        "sc.exe",
+        "failure",
+        "QBBridge",
+        "reset=",
+        "86400",
+        "actions=",
+        "restart/60000/restart/60000/restart/60000",
     ]
     subprocess.run(sc_cmd, capture_output=True)
     print("Service installed with auto-restart on failure.")

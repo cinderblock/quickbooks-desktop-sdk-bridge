@@ -91,9 +91,7 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
 
 async def get_setting(db: aiosqlite.Connection, key: str) -> str | None:
     """Get a single setting value."""
-    async with db.execute(
-        "SELECT value FROM settings WHERE key = ?", (key,)
-    ) as cursor:
+    async with db.execute("SELECT value FROM settings WHERE key = ?", (key,)) as cursor:
         row = await cursor.fetchone()
         return row["value"] if row else None
 
@@ -101,8 +99,7 @@ async def get_setting(db: aiosqlite.Connection, key: str) -> str | None:
 async def set_setting(db: aiosqlite.Connection, key: str, value: str) -> None:
     """Set a setting value."""
     await db.execute(
-        "INSERT OR REPLACE INTO settings (key, value, updated_at) "
-        "VALUES (?, ?, datetime('now'))",
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))",
         (key, value),
     )
     await db.commit()

@@ -5,12 +5,11 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
-
 import aiosqlite
 import bcrypt
+from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
 from itsdangerous import URLSafeTimedSerializer
 
 from qb_bridge.api.deps import get_db, get_qb_session
@@ -50,6 +49,7 @@ def _check_session(request: Request) -> bool:
 # ---------------------------------------------------------------------------
 # Login
 # ---------------------------------------------------------------------------
+
 
 @gui_router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
@@ -92,6 +92,7 @@ async def logout():
 # Dashboard
 # ---------------------------------------------------------------------------
 
+
 @gui_router.get("/", response_class=HTMLResponse)
 async def dashboard(
     request: Request,
@@ -102,23 +103,25 @@ async def dashboard(
         return RedirectResponse("/gui/login", status_code=303)
 
     # Recent audit log entries
-    async with db.execute(
-        "SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT 20"
-    ) as cursor:
+    async with db.execute("SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT 20") as cursor:
         recent_logs = [dict(row) for row in await cursor.fetchall()]
 
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request,
-        "qb_running": is_qb_running(),
-        "qb_state": session.state,
-        "qb_idle": round(session.idle_seconds, 1),
-        "recent_logs": recent_logs,
-    })
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {
+            "request": request,
+            "qb_running": is_qb_running(),
+            "qb_state": session.state,
+            "qb_idle": round(session.idle_seconds, 1),
+            "recent_logs": recent_logs,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
 # API Keys
 # ---------------------------------------------------------------------------
+
 
 @gui_router.get("/api-keys", response_class=HTMLResponse)
 async def api_keys_page(
@@ -129,11 +132,14 @@ async def api_keys_page(
         return RedirectResponse("/gui/login", status_code=303)
 
     keys = await list_keys(db)
-    return templates.TemplateResponse("api_keys.html", {
-        "request": request,
-        "keys": keys,
-        "new_key": None,
-    })
+    return templates.TemplateResponse(
+        "api_keys.html",
+        {
+            "request": request,
+            "keys": keys,
+            "new_key": None,
+        },
+    )
 
 
 @gui_router.post("/api-keys/create", response_class=HTMLResponse)
@@ -147,11 +153,14 @@ async def create_api_key(
 
     key_id, plaintext_key = await create_key(db, name)
     keys = await list_keys(db)
-    return templates.TemplateResponse("api_keys.html", {
-        "request": request,
-        "keys": keys,
-        "new_key": plaintext_key,
-    })
+    return templates.TemplateResponse(
+        "api_keys.html",
+        {
+            "request": request,
+            "keys": keys,
+            "new_key": plaintext_key,
+        },
+    )
 
 
 @gui_router.post("/api-keys/{key_id}/revoke")
@@ -171,6 +180,7 @@ async def revoke_api_key(
 # Connection Settings
 # ---------------------------------------------------------------------------
 
+
 @gui_router.get("/connection", response_class=HTMLResponse)
 async def connection_page(
     request: Request,
@@ -180,15 +190,18 @@ async def connection_page(
     if not _check_session(request):
         return RedirectResponse("/gui/login", status_code=303)
 
-    return templates.TemplateResponse("connection.html", {
-        "request": request,
-        "qb_running": is_qb_running(),
-        "qb_state": session.state,
-        "company_file": await get_setting(db, "company_file_path") or "",
-        "idle_timeout": await get_setting(db, "idle_timeout_seconds") or "600",
-        "auto_launch": await get_setting(db, "auto_launch_qb") or "true",
-        "auto_close": await get_setting(db, "auto_close_qb") or "false",
-    })
+    return templates.TemplateResponse(
+        "connection.html",
+        {
+            "request": request,
+            "qb_running": is_qb_running(),
+            "qb_state": session.state,
+            "company_file": await get_setting(db, "company_file_path") or "",
+            "idle_timeout": await get_setting(db, "idle_timeout_seconds") or "600",
+            "auto_launch": await get_setting(db, "auto_launch_qb") or "true",
+            "auto_close": await get_setting(db, "auto_close_qb") or "false",
+        },
+    )
 
 
 @gui_router.post("/connection", response_class=HTMLResponse)
@@ -215,6 +228,7 @@ async def update_connection(
 # Logs
 # ---------------------------------------------------------------------------
 
+
 @gui_router.get("/logs", response_class=HTMLResponse)
 async def logs_page(
     request: Request,
@@ -223,12 +237,13 @@ async def logs_page(
     if not _check_session(request):
         return RedirectResponse("/gui/login", status_code=303)
 
-    async with db.execute(
-        "SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT 100"
-    ) as cursor:
+    async with db.execute("SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT 100") as cursor:
         logs = [dict(row) for row in await cursor.fetchall()]
 
-    return templates.TemplateResponse("logs.html", {
-        "request": request,
-        "logs": logs,
-    })
+    return templates.TemplateResponse(
+        "logs.html",
+        {
+            "request": request,
+            "logs": logs,
+        },
+    )

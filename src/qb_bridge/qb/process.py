@@ -92,7 +92,6 @@ def close_qb(force: bool = False) -> bool:
     if not is_qb_running():
         return True
 
-    flag = "/F" if force else ""
     for exe_name in ("QBW32.EXE", "QBW32Pro.exe"):
         try:
             cmd = ["taskkill"]

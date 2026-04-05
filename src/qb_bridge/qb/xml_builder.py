@@ -12,10 +12,7 @@ from lxml import etree
 
 QBXML_VERSION = "13.0"
 
-QBXML_PROLOG = (
-    '<?xml version="1.0" encoding="utf-8"?>\n'
-    f'<?qbxml version="{QBXML_VERSION}"?>\n'
-)
+QBXML_PROLOG = f'<?xml version="1.0" encoding="utf-8"?>\n<?qbxml version="{QBXML_VERSION}"?>\n'
 
 
 def _dict_to_xml(parent: etree._Element, data: dict | list | str) -> None:

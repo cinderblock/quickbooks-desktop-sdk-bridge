@@ -52,18 +52,14 @@ class QBConnection:
             log.debug("Dispatching QBXMLRP2.RequestProcessor")
             self._rp = win32com.client.Dispatch("QBXMLRP2.RequestProcessor")
         except pythoncom.com_error as exc:
-            raise QBConnectionError(
-                f"Could not create QBXMLRP2 COM object: {exc}"
-            ) from exc
+            raise QBConnectionError(f"Could not create QBXMLRP2 COM object: {exc}") from exc
 
         try:
             log.debug("OpenConnection2")
             self._rp.OpenConnection2(APP_ID, APP_NAME, 1)  # 1 = localQBD
             self._connected = True
         except pythoncom.com_error as exc:
-            raise QBConnectionError(
-                f"OpenConnection2 failed: {_com_error_desc(exc)}"
-            ) from exc
+            raise QBConnectionError(f"OpenConnection2 failed: {_com_error_desc(exc)}") from exc
 
         try:
             log.debug("BeginSession (company_file=%r)", company_file)
@@ -86,9 +82,7 @@ class QBConnection:
         try:
             response: str = self._rp.ProcessRequest(self._ticket, qbxml)
         except pythoncom.com_error as exc:
-            raise QBRequestError(
-                f"ProcessRequest COM error: {_com_error_desc(exc)}"
-            ) from exc
+            raise QBRequestError(f"ProcessRequest COM error: {_com_error_desc(exc)}") from exc
 
         return response
 

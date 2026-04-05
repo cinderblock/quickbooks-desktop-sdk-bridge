@@ -5,8 +5,8 @@ from __future__ import annotations
 import io
 
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter, landscape
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.pagesizes import landscape, letter
+from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import (
     Paragraph,
@@ -84,9 +84,7 @@ def report_to_pdf(report: ReportData) -> bytes:
         # Alternating row colors
         for i in range(1, len(table_data)):
             if i % 2 == 0:
-                style_commands.append(
-                    ("BACKGROUND", (0, i), (-1, i), colors.HexColor("#f8f9fa"))
-                )
+                style_commands.append(("BACKGROUND", (0, i), (-1, i), colors.HexColor("#f8f9fa")))
 
         # Bold for subtotal / total rows
         for row_idx, row_type in row_styles:

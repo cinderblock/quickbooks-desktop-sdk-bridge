@@ -6,7 +6,7 @@ from fastapi import APIRouter
 
 from qb_bridge.qb.entities import ENTITIES
 
-from .routes import discovery, status, company, reports
+from .routes import company, discovery, reports, status
 from .routes.crud import make_crud_router
 
 

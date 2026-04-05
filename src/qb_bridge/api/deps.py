@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from fastapi import Depends, Header, HTTPException, Request
-
 import aiosqlite
+from fastapi import Depends, Header, HTTPException, Request
 
 from qb_bridge.auth.api_keys import validate_key
 from qb_bridge.qb.session import QBSessionManager
@@ -32,14 +31,20 @@ async def require_api_key(
     if not x_api_key:
         raise HTTPException(
             status_code=401,
-            detail={"ok": False, "error": {"code": "MISSING_API_KEY", "message": "X-API-Key header required"}},
+            detail={
+                "ok": False,
+                "error": {"code": "MISSING_API_KEY", "message": "X-API-Key header required"},
+            },
         )
 
     key_record = await validate_key(db, x_api_key)
     if key_record is None:
         raise HTTPException(
             status_code=401,
-            detail={"ok": False, "error": {"code": "INVALID_API_KEY", "message": "Invalid or revoked API key"}},
+            detail={
+                "ok": False,
+                "error": {"code": "INVALID_API_KEY", "message": "Invalid or revoked API key"},
+            },
         )
 
     # Stash for audit logging

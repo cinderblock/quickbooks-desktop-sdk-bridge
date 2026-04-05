@@ -28,6 +28,7 @@ _SHUTDOWN = object()
 @dataclass
 class _QBRequest:
     """Internal wrapper for a queued QB request."""
+
     qbxml: str
     future: asyncio.Future
     loop: asyncio.AbstractEventLoop
@@ -119,10 +120,8 @@ class QBSessionManager:
 
         try:
             return await asyncio.wait_for(future, timeout=self.request_timeout)
-        except asyncio.TimeoutError:
-            raise QBTimeoutError(
-                f"QB request timed out after {self.request_timeout}s"
-            )
+        except TimeoutError as exc:
+            raise QBTimeoutError(f"QB request timed out after {self.request_timeout}s") from exc
 
     # -------------------------------------------------------------------
     # Worker thread (all COM calls happen here)
@@ -145,13 +144,15 @@ class QBSessionManager:
                     if idle > self.idle_timeout:
                         log.info(
                             "Idle timeout (%.0fs > %ds), disconnecting",
-                            idle, self.idle_timeout,
+                            idle,
+                            self.idle_timeout,
                         )
                         conn.disconnect()
                         self._connection_state = "disconnected"
 
                         if self.auto_close_qb:
                             from .process import close_qb
+
                             close_qb()
 
                 # Poll queue with short timeout so we can check idle
@@ -174,20 +175,16 @@ class QBSessionManager:
                         self._connection_state = "connected"
 
                     response = conn.process_request(request.qbxml)
-                    request.loop.call_soon_threadsafe(
-                        request.future.set_result, response
-                    )
+                    request.loop.call_soon_threadsafe(request.future.set_result, response)
                 except Exception as exc:
                     log.error("QB request failed: %s", exc, exc_info=True)
                     self._connection_state = "error"
                     # Try to clean up the connection on error
-                    try:
+                    import contextlib
+
+                    with contextlib.suppress(Exception):
                         conn.disconnect()
-                    except Exception:
-                        pass
-                    request.loop.call_soon_threadsafe(
-                        request.future.set_exception, exc
-                    )
+                    request.loop.call_soon_threadsafe(request.future.set_exception, exc)
         finally:
             conn.disconnect()
             self._connection_state = "disconnected"
@@ -207,5 +204,8 @@ class QBSessionManager:
         log.info("QuickBooks not running, launching...")
         exe = self.qb_exe_path or None
         cf = self.company_file or None
-        if not launch_qb(company_file=cf, exe_path=exe or "C:\\Program Files (x86)\\Intuit\\QuickBooks 2021\\QBW32.EXE"):
+        if not launch_qb(
+            company_file=cf,
+            exe_path=exe or "C:\\Program Files (x86)\\Intuit\\QuickBooks 2021\\QBW32.EXE",
+        ):
             raise QBNotRunningError("Failed to launch QuickBooks Desktop")

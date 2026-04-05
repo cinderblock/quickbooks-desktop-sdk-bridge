@@ -27,9 +27,7 @@ PUBLIC_PATH_PREFIXES = (
 class IPFilterMiddleware(BaseHTTPMiddleware):
     """Reject requests from non-private IP addresses."""
 
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         client_ip = request.client.host if request.client else "unknown"
 
         if not is_private_ip(client_ip):
@@ -51,9 +49,7 @@ class IPFilterMiddleware(BaseHTTPMiddleware):
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Log every request with timing info."""
 
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         start = time.monotonic()
         client_ip = request.client.host if request.client else "?"
 

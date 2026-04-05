@@ -85,9 +85,7 @@ async def list_keys(db: aiosqlite.Connection) -> list[dict]:
 
 async def revoke_key(db: aiosqlite.Connection, key_id: int) -> bool:
     """Deactivate an API key."""
-    cursor = await db.execute(
-        "UPDATE api_keys SET is_active = 0 WHERE id = ?", (key_id,)
-    )
+    cursor = await db.execute("UPDATE api_keys SET is_active = 0 WHERE id = ?", (key_id,))
     await db.commit()
     return cursor.rowcount > 0
 

@@ -45,7 +45,9 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
             key: dict = Depends(require_api_key),
             name: str | None = Query(None, description="Filter by name (contains)"),
             active: str = Query("ActiveOnly", description="ActiveOnly | InactiveOnly | All"),
-            modified_after: str | None = Query(None, description="ISO datetime, e.g. 2024-01-01T00:00:00"),
+            modified_after: str | None = Query(
+                None, description="ISO datetime, e.g. 2024-01-01T00:00:00"
+            ),
             max_returned: int = Query(100, ge=1, le=5000, description="Max results to return"),
             iterator_id: str | None = Query(None, description="Continue a previous iterator"),
         ):
@@ -107,10 +109,13 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
             response_xml = await session.execute(request_xml)
             item = xml_parser.parse_single_entity(response_xml, ent_name)
             if item is None:
-                raise HTTPException(404, detail={
-                    "ok": False,
-                    "error": {"code": "NOT_FOUND", "message": f"{ent_name} not found"},
-                })
+                raise HTTPException(
+                    404,
+                    detail={
+                        "ok": False,
+                        "error": {"code": "NOT_FOUND", "message": f"{ent_name} not found"},
+                    },
+                )
             return {"ok": True, "data": item}
 
     # ----- CREATE -----
@@ -148,14 +153,17 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
         ):
             edit_sequence = body.pop("EditSequence", None) or body.pop("edit_sequence", None)
             if not edit_sequence:
-                raise HTTPException(400, detail={
-                    "ok": False,
-                    "error": {
-                        "code": "MISSING_EDIT_SEQUENCE",
-                        "message": "EditSequence is required for updates. "
-                                   "Get it from the entity's current data via GET.",
+                raise HTTPException(
+                    400,
+                    detail={
+                        "ok": False,
+                        "error": {
+                            "code": "MISSING_EDIT_SEQUENCE",
+                            "message": "EditSequence is required for updates. "
+                            "Get it from the entity's current data via GET.",
+                        },
                     },
-                })
+                )
 
             mod_data = {ent_id_field: entity_id, "EditSequence": edit_sequence}
             mod_data.update(body)
@@ -179,13 +187,9 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
             key: dict = Depends(require_api_key),
         ):
             if ent_is_txn:
-                request_xml = xml_builder.delete(
-                    ent_name, is_transaction=True, txn_id=entity_id
-                )
+                request_xml = xml_builder.delete(ent_name, is_transaction=True, txn_id=entity_id)
             else:
-                request_xml = xml_builder.delete(
-                    ent_name, is_transaction=False, list_id=entity_id
-                )
+                request_xml = xml_builder.delete(ent_name, is_transaction=False, list_id=entity_id)
             response_xml = await session.execute(request_xml)
             xml_parser.check_status(response_xml)
             return {"ok": True, "data": None}

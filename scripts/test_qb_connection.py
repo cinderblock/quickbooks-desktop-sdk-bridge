@@ -71,18 +71,19 @@ except Exception as e:
 
 # Step 4: Test query — get company info
 print("[4] Querying company info...")
-request = '''<?xml version="1.0" encoding="utf-8"?>
+request = """<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="13.0"?>
 <QBXML>
   <QBXMLMsgsRq onError="stopOnError">
     <CompanyQueryRq>
     </CompanyQueryRq>
   </QBXMLMsgsRq>
-</QBXML>'''
+</QBXML>"""
 
 try:
     response = rp.ProcessRequest(ticket, request)
     import xml.etree.ElementTree as ET
+
     root = ET.fromstring(response)
     company_name = root.findtext(".//CompanyName", "?")
     print(f"    Company: {company_name}")
@@ -91,7 +92,7 @@ except Exception as e:
 
 # Step 5: Test account list
 print("[5] Querying accounts (first 5)...")
-request2 = '''<?xml version="1.0" encoding="utf-8"?>
+request2 = """<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="13.0"?>
 <QBXML>
   <QBXMLMsgsRq onError="stopOnError">
@@ -99,7 +100,7 @@ request2 = '''<?xml version="1.0" encoding="utf-8"?>
       <MaxReturned>5</MaxReturned>
     </AccountQueryRq>
   </QBXMLMsgsRq>
-</QBXML>'''
+</QBXML>"""
 
 try:
     response2 = rp.ProcessRequest(ticket, request2)
