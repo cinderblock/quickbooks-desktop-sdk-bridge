@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}QuickBooks Bridge{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <style>
+        :root {
+            --pico-font-size: 15px;
+        }
+        nav {
+            margin-bottom: 1rem;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 0.2em 0.6em;
+            border-radius: 4px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+        .status-connected { background: #d4edda; color: #155724; }
+        .status-disconnected { background: #f8d7da; color: #721c24; }
+        .status-error { background: #fff3cd; color: #856404; }
+        .key-display {
+            font-family: monospace;
+            background: #f8f9fa;
+            padding: 0.5rem;
+            border-radius: 4px;
+            word-break: break-all;
+            border: 2px solid #28a745;
+        }
+        .log-table td { font-size: 0.85em; }
+        footer { margin-top: 2rem; text-align: center; font-size: 0.8em; opacity: 0.6; }
+    </style>
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <nav class="container-fluid">
+        <ul>
+            <li><strong>QB Bridge</strong></li>
+        </ul>
+        <ul>
+            <li><a href="/gui/">Dashboard</a></li>
+            <li><a href="/gui/api-keys">API Keys</a></li>
+            <li><a href="/gui/connection">Connection</a></li>
+            <li><a href="/gui/logs">Logs</a></li>
+            <li><a href="/docs" target="_blank">API Docs</a></li>
+            <li><a href="/gui/logout">Logout</a></li>
+        </ul>
+    </nav>
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+    <footer class="container">
+        QuickBooks Bridge v0.1.0
+    </footer>
+</body>
+</html>

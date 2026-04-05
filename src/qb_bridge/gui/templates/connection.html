@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Connection - QB Bridge{% endblock %}
+{% block content %}
+<h2>Connection Settings</h2>
+
+<article>
+    <header>Current Status</header>
+    <p>
+        QuickBooks Desktop:
+        {% if qb_running %}
+            <span class="status-badge status-connected">Running</span>
+        {% else %}
+            <span class="status-badge status-disconnected">Not Running</span>
+        {% endif %}
+    </p>
+    <p>
+        SDK Connection:
+        <span class="status-badge status-{{ qb_state }}">{{ qb_state }}</span>
+    </p>
+</article>
+
+<form method="post" action="/gui/connection">
+    <label>
+        Company File Path
+        <input type="text" name="company_file" value="{{ company_file }}" placeholder="Leave empty to use whatever QB has open">
+        <small>Path to .qbw file, or leave empty for automatic detection.</small>
+    </label>
+
+    <label>
+        Idle Timeout (seconds)
+        <input type="number" name="idle_timeout" value="{{ idle_timeout }}" min="60" max="86400">
+        <small>Close QB session after this many seconds of inactivity. Default: 600 (10 min).</small>
+    </label>
+
+    <fieldset>
+        <label>
+            <input type="checkbox" name="auto_launch" value="true" {{ 'checked' if auto_launch == 'true' }}>
+            Auto-launch QuickBooks when an API request arrives
+        </label>
+        <label>
+            <input type="checkbox" name="auto_close" value="true" {{ 'checked' if auto_close == 'true' }}>
+            Close QuickBooks process on idle timeout (not just the session)
+        </label>
+    </fieldset>
+
+    <button type="submit">Save Settings</button>
+</form>
+{% endblock %}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Logs - QB Bridge{% endblock %}
+{% block content %}
+<h2>Audit Log</h2>
+<p>Last 100 API requests.</p>
+
+{% if logs %}
+<figure>
+<table class="log-table">
+    <thead>
+        <tr>
+            <th>Timestamp</th>
+            <th>Client IP</th>
+            <th>Method</th>
+            <th>Path</th>
+            <th>Status</th>
+            <th>Duration</th>
+            <th>Error</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for log in logs %}
+        <tr>
+            <td>{{ log.timestamp }}</td>
+            <td>{{ log.client_ip }}</td>
+            <td>{{ log.method }}</td>
+            <td>{{ log.path }}</td>
+            <td>{{ log.status_code or '-' }}</td>
+            <td>{{ '%.1f' % log.duration_ms if log.duration_ms else '-' }}ms</td>
+            <td>{{ log.error or '' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% else %}
+<p>No log entries yet.</p>
+{% endif %}
+
+<button hx-get="/gui/logs" hx-target="main" hx-swap="innerHTML" class="secondary outline">
+    Refresh
+</button>
+{% endblock %}

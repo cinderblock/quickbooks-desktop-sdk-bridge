@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - QuickBooks Bridge</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <style>
+        body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+        .login-card { max-width: 400px; width: 100%; }
+    </style>
+</head>
+<body>
+    <article class="login-card">
+        <header>
+            <h3>QuickBooks Bridge</h3>
+            <p>Admin Dashboard Login</p>
+        </header>
+        {% if error %}
+        <p style="color: var(--pico-del-color);">{{ error }}</p>
+        {% endif %}
+        <form method="post" action="/gui/login">
+            <label for="password">Password</label>
+            <input type="password" name="password" id="password" placeholder="Enter admin password" required autofocus>
+            <small>First login? The password you enter will become the admin password.</small>
+            <button type="submit">Login</button>
+        </form>
+    </article>
+</body>
+</html>

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - QB Bridge{% endblock %}
+{% block content %}
+<h2>Dashboard</h2>
+
+<div class="grid">
+    <article>
+        <header>QuickBooks Desktop</header>
+        <p>
+            Status:
+            {% if qb_running %}
+                <span class="status-badge status-connected">Running</span>
+            {% else %}
+                <span class="status-badge status-disconnected">Not Running</span>
+            {% endif %}
+        </p>
+        <p>
+            Connection:
+            <span class="status-badge status-{{ qb_state }}">{{ qb_state }}</span>
+        </p>
+        <p>Idle: {{ qb_idle }}s</p>
+    </article>
+    <article>
+        <header>Quick Links</header>
+        <ul>
+            <li><a href="/docs" target="_blank">Swagger API Docs</a></li>
+            <li><a href="/redoc" target="_blank">ReDoc API Reference</a></li>
+            <li><a href="/openapi.json" target="_blank">OpenAPI Spec (JSON)</a></li>
+            <li><a href="/api/v1/entities" target="_blank">Entity List</a></li>
+        </ul>
+    </article>
+</div>
+
+<h3>Recent Activity</h3>
+{% if recent_logs %}
+<figure>
+<table class="log-table">
+    <thead>
+        <tr>
+            <th>Time</th>
+            <th>IP</th>
+            <th>Method</th>
+            <th>Path</th>
+            <th>Status</th>
+            <th>Duration</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for log in recent_logs %}
+        <tr>
+            <td>{{ log.timestamp }}</td>
+            <td>{{ log.client_ip }}</td>
+            <td>{{ log.method }}</td>
+            <td>{{ log.path }}</td>
+            <td>{{ log.status_code or '-' }}</td>
+            <td>{{ '%.1f' % log.duration_ms if log.duration_ms else '-' }}ms</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% else %}
+<p>No recent activity.</p>
+{% endif %}
+{% endblock %}

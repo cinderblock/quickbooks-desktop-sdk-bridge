@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}API Keys - QB Bridge{% endblock %}
+{% block content %}
+<h2>API Keys</h2>
+
+{% if new_key %}
+<article style="border: 2px solid #28a745;">
+    <header>New API Key Created</header>
+    <p><strong>Copy this key now — it will not be shown again.</strong></p>
+    <div class="key-display">{{ new_key }}</div>
+    <p style="margin-top: 0.5rem;">
+        <small>Use as: <code>X-API-Key: {{ new_key }}</code></small>
+    </p>
+</article>
+{% endif %}
+
+<h3>Create New Key</h3>
+<form method="post" action="/gui/api-keys/create">
+    <div class="grid">
+        <label>
+            Name / Description
+            <input type="text" name="name" placeholder="e.g. Dev Machine - Alice" required>
+        </label>
+        <label style="display: flex; align-items: end;">
+            <button type="submit">Generate Key</button>
+        </label>
+    </div>
+</form>
+
+<h3>Existing Keys</h3>
+{% if keys %}
+<figure>
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Key Prefix</th>
+            <th>Created</th>
+            <th>Last Used</th>
+            <th>Status</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for key in keys %}
+        <tr>
+            <td>{{ key.name }}</td>
+            <td><code>{{ key.key_prefix }}</code></td>
+            <td>{{ key.created_at }}</td>
+            <td>{{ key.last_used_at or 'Never' }}</td>
+            <td>
+                {% if key.is_active %}
+                    <span class="status-badge status-connected">Active</span>
+                {% else %}
+                    <span class="status-badge status-disconnected">Revoked</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if key.is_active %}
+                <form method="post" action="/gui/api-keys/{{ key.id }}/revoke" style="display:inline;">
+                    <button type="submit" class="secondary outline" style="padding: 0.3em 0.6em; font-size: 0.85em;">Revoke</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% else %}
+<p>No API keys yet. Create one above.</p>
+{% endif %}
+{% endblock %}
