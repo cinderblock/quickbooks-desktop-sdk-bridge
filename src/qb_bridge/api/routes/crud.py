@@ -15,40 +15,44 @@ from qb_bridge.qb.session import QBSessionManager
 
 
 def make_crud_router(entity: EntityDef) -> APIRouter:
-    """Create a FastAPI router with CRUD endpoints for *entity*."""
+    """Create a FastAPI router with CRUD endpoints for *entity*.
+
+    Each inner function captures ``entity`` via closure — no default
+    parameter tricks that upset Pydantic's model introspection.
+    """
     router = APIRouter(
         prefix=f"/api/v1/{entity.rest_path}",
         tags=[entity.name],
     )
 
-    id_param = "txn_id" if entity.is_transaction else "list_id"
-    id_field = entity.id_field  # "TxnID" or "ListID"
+    # Capture entity fields in local vars for the closure
+    ent_name = entity.name
+    ent_id_field = entity.id_field
+    ent_is_txn = entity.is_transaction
+    safe_path = entity.rest_path.replace("-", "_").replace("/", "_")
 
     # ----- LIST -----
     if entity.supports_query:
 
         @router.get(
             "",
-            summary=f"List {entity.name}s",
+            summary=f"List {ent_name}s",
             description=entity.description,
-            name=f"list_{entity.rest_path.replace('-', '_').replace('/', '_')}",
+            name=f"list_{safe_path}",
         )
         async def list_entities(
             session: QBSessionManager = Depends(get_qb_session),
-            _key: dict = Depends(require_api_key),
+            key: dict = Depends(require_api_key),
             name: str | None = Query(None, description="Filter by name (contains)"),
             active: str = Query("ActiveOnly", description="ActiveOnly | InactiveOnly | All"),
             modified_after: str | None = Query(None, description="ISO datetime, e.g. 2024-01-01T00:00:00"),
             max_returned: int = Query(100, ge=1, le=5000, description="Max results to return"),
             iterator_id: str | None = Query(None, description="Continue a previous iterator"),
-            _entity: EntityDef = entity,
         ):
             filters: dict = {}
 
             if name:
-                # Different entities use different filter names
-                if _entity.is_transaction:
-                    # Transactions often use RefNumber or entity-specific filters
+                if ent_is_txn:
                     filters["RefNumber"] = name
                 else:
                     filters["NameFilter"] = {"MatchCriterion": "Contains", "Name": name}
@@ -63,12 +67,11 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
             if iterator_id:
                 iterator = "Continue"
             else:
-                # Only use iterator for potentially large result sets
                 if max_returned > 0:
                     filters["MaxReturned"] = str(max_returned)
 
             request_xml = xml_builder.query(
-                _entity.name,
+                ent_name,
                 filters=filters,
                 iterator="Start" if not iterator_id and max_returned >= 100 else iterator,
                 iterator_id=iterator_id,
@@ -91,23 +94,22 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
         # ----- GET BY ID -----
         @router.get(
             "/{entity_id}",
-            summary=f"Get {entity.name} by ID",
-            name=f"get_{entity.rest_path.replace('-', '_').replace('/', '_')}",
+            summary=f"Get {ent_name} by ID",
+            name=f"get_{safe_path}",
         )
         async def get_entity(
             entity_id: str,
             session: QBSessionManager = Depends(get_qb_session),
-            _key: dict = Depends(require_api_key),
-            _entity: EntityDef = entity,
+            key: dict = Depends(require_api_key),
         ):
-            filters = {_entity.id_field: entity_id}
-            request_xml = xml_builder.query(_entity.name, filters=filters)
+            filters = {ent_id_field: entity_id}
+            request_xml = xml_builder.query(ent_name, filters=filters)
             response_xml = await session.execute(request_xml)
-            item = xml_parser.parse_single_entity(response_xml, _entity.name)
+            item = xml_parser.parse_single_entity(response_xml, ent_name)
             if item is None:
                 raise HTTPException(404, detail={
                     "ok": False,
-                    "error": {"code": "NOT_FOUND", "message": f"{_entity.name} not found"},
+                    "error": {"code": "NOT_FOUND", "message": f"{ent_name} not found"},
                 })
             return {"ok": True, "data": item}
 
@@ -117,18 +119,17 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
         @router.post(
             "",
             status_code=201,
-            summary=f"Create {entity.name}",
-            name=f"create_{entity.rest_path.replace('-', '_').replace('/', '_')}",
+            summary=f"Create {ent_name}",
+            name=f"create_{safe_path}",
         )
         async def create_entity(
             body: dict = Body(...),
             session: QBSessionManager = Depends(get_qb_session),
-            _key: dict = Depends(require_api_key),
-            _entity: EntityDef = entity,
+            key: dict = Depends(require_api_key),
         ):
-            request_xml = xml_builder.add(_entity.name, body)
+            request_xml = xml_builder.add(ent_name, body)
             response_xml = await session.execute(request_xml)
-            created = xml_parser.parse_single_entity(response_xml, _entity.name)
+            created = xml_parser.parse_single_entity(response_xml, ent_name)
             return {"ok": True, "data": created}
 
     # ----- UPDATE -----
@@ -136,15 +137,14 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
 
         @router.put(
             "/{entity_id}",
-            summary=f"Update {entity.name}",
-            name=f"update_{entity.rest_path.replace('-', '_').replace('/', '_')}",
+            summary=f"Update {ent_name}",
+            name=f"update_{safe_path}",
         )
         async def update_entity(
             entity_id: str,
             body: dict = Body(...),
             session: QBSessionManager = Depends(get_qb_session),
-            _key: dict = Depends(require_api_key),
-            _entity: EntityDef = entity,
+            key: dict = Depends(require_api_key),
         ):
             edit_sequence = body.pop("EditSequence", None) or body.pop("edit_sequence", None)
             if not edit_sequence:
@@ -157,12 +157,12 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
                     },
                 })
 
-            mod_data = {_entity.id_field: entity_id, "EditSequence": edit_sequence}
+            mod_data = {ent_id_field: entity_id, "EditSequence": edit_sequence}
             mod_data.update(body)
 
-            request_xml = xml_builder.mod(_entity.name, mod_data)
+            request_xml = xml_builder.mod(ent_name, mod_data)
             response_xml = await session.execute(request_xml)
-            updated = xml_parser.parse_single_entity(response_xml, _entity.name)
+            updated = xml_parser.parse_single_entity(response_xml, ent_name)
             return {"ok": True, "data": updated}
 
     # ----- DELETE -----
@@ -170,22 +170,21 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
 
         @router.delete(
             "/{entity_id}",
-            summary=f"Delete {entity.name}",
-            name=f"delete_{entity.rest_path.replace('-', '_').replace('/', '_')}",
+            summary=f"Delete {ent_name}",
+            name=f"delete_{safe_path}",
         )
         async def delete_entity(
             entity_id: str,
             session: QBSessionManager = Depends(get_qb_session),
-            _key: dict = Depends(require_api_key),
-            _entity: EntityDef = entity,
+            key: dict = Depends(require_api_key),
         ):
-            if _entity.is_transaction:
+            if ent_is_txn:
                 request_xml = xml_builder.delete(
-                    _entity.name, is_transaction=True, txn_id=entity_id
+                    ent_name, is_transaction=True, txn_id=entity_id
                 )
             else:
                 request_xml = xml_builder.delete(
-                    _entity.name, is_transaction=False, list_id=entity_id
+                    ent_name, is_transaction=False, list_id=entity_id
                 )
             response_xml = await session.execute(request_xml)
             xml_parser.check_status(response_xml)
