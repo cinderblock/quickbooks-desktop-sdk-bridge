@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 
+from qb_bridge.api.deps import require_api_key
 from qb_bridge.qb.entities import ENTITIES
 
 router = APIRouter(tags=["Discovery"])
 
 
-@router.get("/", summary="API root", description="Links to documentation and available resources.")
+@router.get(
+    "/",
+    summary="API root",
+    description="Links to documentation and available resources. No auth required.",
+)
 async def api_root(request: Request):
     base = str(request.base_url).rstrip("/")
     return {
@@ -36,7 +41,9 @@ async def api_root(request: Request):
     summary="List available entities",
     description="Shows every QuickBooks entity the API can interact with and which operations are supported.",
 )
-async def list_entities():
+async def list_entities(
+    key: dict = Depends(require_api_key),
+):
     return {
         "ok": True,
         "data": [entity.to_dict() for entity in ENTITIES.values()],

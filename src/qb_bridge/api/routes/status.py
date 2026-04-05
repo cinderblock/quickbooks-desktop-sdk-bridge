@@ -6,7 +6,7 @@ import time
 
 from fastapi import APIRouter, Depends, Request
 
-from qb_bridge.api.deps import get_qb_session
+from qb_bridge.api.deps import get_qb_session, require_api_key
 from qb_bridge.qb.process import is_qb_running
 from qb_bridge.qb.session import QBSessionManager
 
@@ -23,6 +23,7 @@ _start_time = time.monotonic()
 async def get_status(
     request: Request,
     session: QBSessionManager = Depends(get_qb_session),
+    key: dict = Depends(require_api_key),
 ):
     uptime = time.monotonic() - _start_time
     return {

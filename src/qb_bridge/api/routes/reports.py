@@ -87,7 +87,9 @@ REPORT_DEFS: dict[str, tuple[ReportCategory, str, str]] = {
     summary="List available reports",
     description="Returns all report types this API can generate.",
 )
-async def list_reports():
+async def list_reports(
+    key: dict = Depends(require_api_key),
+):
     reports = []
     for slug, (category, _qb_type, display_name) in REPORT_DEFS.items():
         reports.append(
