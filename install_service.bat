@@ -19,7 +19,8 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-set WORK_DIR=C:\Users\chtacklind\git\QuickBooks Bridge
+set WORK_DIR=%~dp0
+set WORK_DIR=%WORK_DIR:~0,-1%
 set NSSM=%WORK_DIR%\nssm.exe
 set PYTHON=%WORK_DIR%\.venv\Scripts\python.exe
 
