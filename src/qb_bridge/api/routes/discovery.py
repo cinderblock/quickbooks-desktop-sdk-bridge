@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 
+from qb_bridge import __version__
 from qb_bridge.api.deps import require_api_key
 from qb_bridge.qb.entities import ENTITIES
 
@@ -21,7 +22,7 @@ async def api_root(request: Request):
         "ok": True,
         "data": {
             "name": "QuickBooks Bridge API",
-            "version": "0.1.0",
+            "version": __version__,
             "documentation": {
                 "swagger_ui": f"{base}/docs",
                 "redoc": f"{base}/redoc",

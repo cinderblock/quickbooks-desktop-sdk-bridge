@@ -6,6 +6,7 @@ import time
 
 from fastapi import APIRouter, Depends, Request
 
+from qb_bridge import __version__
 from qb_bridge.api.deps import get_qb_session, require_api_key
 from qb_bridge.qb.process import is_qb_running
 from qb_bridge.qb.session import QBSessionManager
@@ -30,7 +31,7 @@ async def get_status(
         "ok": True,
         "data": {
             "service": "QuickBooks Bridge API",
-            "version": "0.1.0",
+            "version": __version__,
             "uptime_seconds": round(uptime, 1),
             "qb_desktop_running": is_qb_running(),
             "qb_connection_state": session.state,

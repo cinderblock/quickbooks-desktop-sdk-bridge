@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from itsdangerous import URLSafeTimedSerializer
 
+from qb_bridge import __version__
 from qb_bridge.api.deps import get_db, get_qb_session
 from qb_bridge.auth.api_keys import create_key, list_keys, revoke_key
 from qb_bridge.database import get_setting, set_setting
@@ -22,6 +23,7 @@ log = logging.getLogger(__name__)
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+templates.env.globals["version"] = __version__
 
 gui_router = APIRouter(prefix="/gui", tags=["GUI"])
 
