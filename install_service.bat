@@ -23,18 +23,38 @@ set WORK_DIR=C:\Users\chtacklind\git\QuickBooks Bridge
 set NSSM=%WORK_DIR%\nssm.exe
 set PYTHON=%WORK_DIR%\.venv\Scripts\python.exe
 
-echo  [1/5] Stopping and removing old service...
+REM Get username and password for the service account
+echo  The service needs to run under your Windows user account
+echo  (required for QuickBooks file access).
+echo.
+set /p SVC_USER=  Windows username [%USERNAME%]:
+if "%SVC_USER%"=="" set SVC_USER=%USERNAME%
+
+REM Add .\ prefix if not already qualified
+echo %SVC_USER% | findstr /C:"\" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo %SVC_USER% | findstr /C:"@" >nul 2>&1
+    if %errorlevel% neq 0 (
+        set SVC_USER=.\%SVC_USER%
+    )
+)
+
+echo.
+set /p SVC_PASS=  Windows password:
+echo.
+
+echo  [1/6] Stopping and removing old service...
 "%NSSM%" stop QBBridge >nul 2>&1
 "%NSSM%" remove QBBridge confirm >nul 2>&1
 sc stop QBBridge >nul 2>&1
 sc delete QBBridge >nul 2>&1
 timeout /t 2 /nobreak >nul
 
-echo  [2/5] Killing any leftover python on port 8743...
+echo  [2/6] Killing any leftover processes on port 8743...
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8743.*LISTEN"') do taskkill /PID %%a /F >nul 2>&1
 timeout /t 2 /nobreak >nul
 
-echo  [3/5] Installing service with NSSM...
+echo  [3/6] Installing service with NSSM...
 "%NSSM%" install QBBridge "%PYTHON%" -m uvicorn qb_bridge.main:app --host 0.0.0.0 --port 8743
 "%NSSM%" set QBBridge AppDirectory "%WORK_DIR%"
 "%NSSM%" set QBBridge DisplayName "QuickBooks Bridge API"
@@ -49,11 +69,22 @@ echo  [3/5] Installing service with NSSM...
 "%NSSM%" set QBBridge AppRestartDelay 5000
 
 echo.
-echo  [4/5] Configuring failure recovery...
+echo  [4/6] Setting service to run as %SVC_USER%...
+"%NSSM%" set QBBridge ObjectName %SVC_USER% %SVC_PASS%
+if %errorlevel% neq 0 (
+    echo.
+    echo  ERROR: Failed to set service account. Check username/password.
+    "%NSSM%" remove QBBridge confirm >nul 2>&1
+    pause
+    exit /b 1
+)
+
+echo.
+echo  [5/6] Configuring failure recovery (auto-restart)...
 sc failure QBBridge reset= 86400 actions= restart/10000/restart/10000/restart/30000
 
 echo.
-echo  [5/5] Starting service...
+echo  [6/6] Starting service...
 net start QBBridge
 
 timeout /t 5 /nobreak >nul
@@ -70,6 +101,7 @@ if %errorlevel% equ 0 (
 echo.
 echo  ============================================================
 echo   Service installed: QBBridge  (via NSSM)
+echo   Running as: %SVC_USER%
 echo.
 echo   API URL:       http://localhost:8743
 echo   Swagger docs:  http://localhost:8743/docs
