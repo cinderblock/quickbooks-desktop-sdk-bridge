@@ -122,8 +122,8 @@ def main() -> None:
     key_prefix = raw_key[:12] + "..."
 
     db.execute(
-        "INSERT INTO api_keys (name, key_hash, key_prefix) VALUES (?, ?, ?)",
-        (key_name, key_hash, key_prefix),
+        "INSERT INTO api_keys (name, key_hash, key_prefix, permissions) VALUES (?, ?, ?, ?)",
+        (key_name, key_hash, key_prefix, '{"*":["admin"]}'),
     )
     db.commit()
 
@@ -244,6 +244,7 @@ def _init_schema(db: sqlite3.Connection) -> None:
             name        TEXT NOT NULL,
             key_hash    TEXT NOT NULL UNIQUE,
             key_prefix  TEXT NOT NULL DEFAULT '',
+            permissions TEXT NOT NULL DEFAULT '{"*":["admin"]}',
             created_at  TEXT NOT NULL DEFAULT (datetime('now')),
             last_used_at TEXT,
             is_active   INTEGER NOT NULL DEFAULT 1
@@ -276,6 +277,7 @@ def _init_schema(db: sqlite3.Connection) -> None:
         "qb_exe_path": r"C:\Program Files (x86)\Intuit\QuickBooks 2021\QBW32Pro.exe",
         "log_level": "INFO",
         "gui_password_hash": "",
+        "gui_session_secret": "",
     }
     for key, value in defaults.items():
         db.execute(
