@@ -1,56 +1,33 @@
-"""Thread-safe async bridge to QuickBooks COM.
+"""QuickBooks COM session manager.
 
-Architecture:
-    FastAPI async handlers -> asyncio.Queue -> dedicated COM worker thread.
-    The worker thread owns all COM objects (apartment-threaded requirement).
-    Results flow back via ``loop.call_soon_threadsafe(future.set_result, ...)``.
+Runs COM in a **subprocess** to avoid STA apartment issues with uvicorn.
+The subprocess (worker.py) handles COM directly on its main thread,
+communicating via JSON-over-stdio.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
-import queue
-import threading
+import subprocess
+import sys
 import time
-from dataclasses import dataclass, field
+from pathlib import Path
 
-from .connection import QBConnection
-from .exceptions import QBConnectionError, QBSessionError, QBTimeoutError
-from .process import QB_EXE_PATH, launch_qb
+from .exceptions import QBConnectionError, QBTimeoutError
 
 log = logging.getLogger(__name__)
 
-# Sentinel to tell the worker thread to shut down
-_SHUTDOWN = object()
+WORKER_SCRIPT = str(Path(__file__).parent / "worker.py")
 
-# How long to wait between connection retries (seconds)
 _CONNECT_RETRY_DELAY = 5.0
-# Max retries when connecting (covers QB login screen, slow startup, etc.)
-_CONNECT_MAX_RETRIES = 12  # 12 * 5s = 60s total
-
-
-@dataclass
-class _QBRequest:
-    """Internal wrapper for a queued QB request."""
-
-    qbxml: str
-    future: asyncio.Future
-    loop: asyncio.AbstractEventLoop
-    submitted_at: float = field(default_factory=time.monotonic)
+_CONNECT_MAX_RETRIES = 12
 
 
 class QBSessionManager:
-    """Async-safe manager for QuickBooks COM sessions.
-
-    Usage::
-
-        mgr = QBSessionManager(company_file="", idle_timeout=600)
-        await mgr.start()
-        response_xml = await mgr.execute(qbxml_request)
-        await mgr.stop()
-    """
+    """Async session manager that delegates COM to a subprocess."""
 
     def __init__(
         self,
@@ -68,15 +45,11 @@ class QBSessionManager:
         self.auto_close_qb = auto_close_qb
         self.request_timeout = request_timeout
 
-        self._queue: queue.Queue = queue.Queue()
-        self._worker: threading.Thread | None = None
+        self._proc: subprocess.Popen | None = None
+        self._lock = asyncio.Lock()
         self._running = False
         self._last_activity: float = 0.0
-        self._connection_state: str = (
-            "disconnected"  # disconnected | connecting | connected | error
-        )
-        self._last_connect_attempt: float = 0.0
-        self._lock = threading.Lock()
+        self._connection_state: str = "disconnected"
 
     @property
     def state(self) -> str:
@@ -89,167 +62,115 @@ class QBSessionManager:
         return time.monotonic() - self._last_activity
 
     async def start(self) -> None:
-        """Start the COM worker thread."""
-        if self._running:
-            return
         self._running = True
-        self._worker = threading.Thread(
-            target=self._worker_loop,
-            name="qb-com-worker",
-            daemon=True,
-        )
-        self._worker.start()
         log.info("QBSessionManager started")
 
     async def stop(self) -> None:
-        """Gracefully shut down: disconnect and join the worker thread."""
-        if not self._running:
-            return
         self._running = False
-        self._queue.put(_SHUTDOWN)
-        if self._worker is not None:
-            self._worker.join(timeout=15)
+        await self._kill_worker()
         log.info("QBSessionManager stopped")
 
     async def execute(self, qbxml: str) -> str:
-        """Submit a qbXML request and await the response.
-
-        Raises:
-            QBConnectionError: Cannot connect to QB.
-            QBTimeoutError: Request did not complete within timeout.
-            QBRequestError: QB returned an error status.
-        """
+        """Send a qbXML request to the worker subprocess."""
         if not self._running:
             raise QBConnectionError("QBSessionManager is not running")
 
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future[str] = loop.create_future()
-        request = _QBRequest(qbxml=qbxml, future=future, loop=loop)
-        self._queue.put(request)
+        async with self._lock:
+            self._last_activity = time.monotonic()
 
-        try:
-            return await asyncio.wait_for(future, timeout=self.request_timeout)
-        except TimeoutError as exc:
-            raise QBTimeoutError(f"QB request timed out after {self.request_timeout}s") from exc
+            # Ensure worker is alive
+            if not self._proc or self._proc.poll() is not None:
+                await self._start_worker()
 
-    # -------------------------------------------------------------------
-    # Worker thread (all COM calls happen here)
-    # -------------------------------------------------------------------
+            # Send request
+            msg = json.dumps({"cmd": "execute", "qbxml": qbxml}) + "\n"
+            try:
+                self._proc.stdin.write(msg)
+                self._proc.stdin.flush()
+            except (BrokenPipeError, OSError) as exc:
+                self._connection_state = "error"
+                await self._kill_worker()
+                raise QBConnectionError(f"Worker pipe broken: {exc}") from exc
 
-    def _worker_loop(self) -> None:
-        """Main loop for the dedicated COM thread."""
-        import pythoncom
+            # Read response (with timeout)
+            try:
+                response_line = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(None, self._proc.stdout.readline),
+                    timeout=self.request_timeout,
+                )
+            except TimeoutError as exc:
+                self._connection_state = "error"
+                await self._kill_worker()
+                raise QBTimeoutError(
+                    f"Worker did not respond within {self.request_timeout}s"
+                ) from exc
 
-        pythoncom.CoInitialize()
-        log.debug("COM initialized on worker thread")
-
-        conn = QBConnection()
-
-        try:
-            while self._running:
-                # Check idle timeout
-                if conn.session_open and self._last_activity > 0:
-                    idle = time.monotonic() - self._last_activity
-                    if idle > self.idle_timeout:
-                        log.info(
-                            "Idle timeout (%.0fs > %ds), disconnecting",
-                            idle,
-                            self.idle_timeout,
-                        )
-                        conn.disconnect()
-                        self._connection_state = "disconnected"
-
-                        if self.auto_close_qb:
-                            from .process import close_qb
-
-                            close_qb()
-
-                # Poll queue with short timeout so we can check idle
-                try:
-                    item = self._queue.get(timeout=1.0)
-                except queue.Empty:
-                    continue
-
-                if item is _SHUTDOWN:
-                    break
-
-                request: _QBRequest = item
-                self._last_activity = time.monotonic()
-
-                try:
-                    # Ensure connected (with retries for QB startup/login)
-                    if not conn.session_open:
-                        self._connect_with_retry(conn)
-
-                    response = conn.process_request(request.qbxml)
-                    request.loop.call_soon_threadsafe(request.future.set_result, response)
-                except Exception as exc:
-                    log.error("QB request failed: %s", exc, exc_info=True)
-                    self._connection_state = "error"
-                    with contextlib.suppress(Exception):
-                        conn.disconnect()
-                    request.loop.call_soon_threadsafe(request.future.set_exception, exc)
-        finally:
-            conn.disconnect()
-            self._connection_state = "disconnected"
-            pythoncom.CoUninitialize()
-            log.debug("COM uninitialized on worker thread")
-
-    def _connect_with_retry(self, conn: QBConnection) -> None:
-        """Try to connect to QB with retries.
-
-        The COM BeginSession call is the only reliable way to know if QB is
-        ready — process detection is unreliable across 32/64-bit boundaries.
-        We just retry the actual connection, which handles:
-        - QB still loading after launch
-        - QB on the login/password screen
-        - QB switching company files
-        - QB not running (launches it on first attempt if auto_launch is on)
-        """
-        self._connection_state = "connecting"
-        launched = False
-        last_error: Exception | None = None
-
-        for attempt in range(1, _CONNECT_MAX_RETRIES + 1):
-            if not self._running:
-                raise QBConnectionError("Shutting down")
+            if not response_line:
+                self._connection_state = "error"
+                await self._kill_worker()
+                raise QBConnectionError("Worker process died")
 
             try:
-                log.info("Connecting to QB (attempt %d/%d)...", attempt, _CONNECT_MAX_RETRIES)
-                conn.connect(self.company_file)
+                result = json.loads(response_line)
+            except json.JSONDecodeError as exc:
+                raise QBConnectionError(f"Invalid worker response: {response_line!r}") from exc
+
+            if result.get("status") == "ok":
                 self._connection_state = "connected"
-                log.info("Connected to QuickBooks!")
-                return
-            except (QBConnectionError, QBSessionError) as exc:
-                last_error = exc
-                log.warning(
-                    "Connection attempt %d/%d failed: %s",
-                    attempt,
-                    _CONNECT_MAX_RETRIES,
-                    exc,
-                )
+                return result["response"]
+            else:
+                error_msg = result.get("message", "Unknown worker error")
+                # Worker will retry connection on next request
+                self._connection_state = "error"
+                raise QBConnectionError(f"QB error: {error_msg}")
+
+    async def _start_worker(self) -> None:
+        """Launch the COM worker subprocess."""
+        await self._kill_worker()
+
+        python_exe = sys.executable
+        cmd = [python_exe, WORKER_SCRIPT, self.company_file]
+
+        log.info("Starting QB worker subprocess: %s", " ".join(cmd))
+        self._proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,  # Line-buffered
+        )
+
+        # Wait for "ready" message
+        try:
+            ready_line = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(None, self._proc.stdout.readline),
+                timeout=30.0,
+            )
+            ready = json.loads(ready_line)
+            if ready.get("status") != "ready":
+                raise QBConnectionError(f"Worker failed to start: {ready}")
+            log.info("QB worker subprocess ready (PID %d)", self._proc.pid)
+            self._connection_state = "disconnected"
+        except TimeoutError as exc:
+            await self._kill_worker()
+            raise QBConnectionError("Worker subprocess did not start within 30s") from exc
+        except Exception as exc:
+            stderr = ""
+            if self._proc and self._proc.stderr:
+                stderr = self._proc.stderr.read()
+            await self._kill_worker()
+            raise QBConnectionError(f"Worker startup failed: {stderr}") from exc
+
+    async def _kill_worker(self) -> None:
+        """Kill the worker subprocess if running."""
+        if self._proc:
+            try:
+                self._proc.stdin.write(json.dumps({"cmd": "quit"}) + "\n")
+                self._proc.stdin.flush()
+                self._proc.wait(timeout=5)
+            except Exception:
                 with contextlib.suppress(Exception):
-                    conn.disconnect()
-
-                # Try launching QB once if auto_launch is enabled
-                if not launched and self.auto_launch_qb:
-                    launched = True
-                    exe = self.qb_exe_path or QB_EXE_PATH
-                    cf = self.company_file or None
-                    log.info("Attempting to launch QuickBooks...")
-                    launch_qb(company_file=cf, exe_path=exe)
-
-                if attempt < _CONNECT_MAX_RETRIES:
-                    log.info(
-                        "Retrying in %.0fs (QB may still be loading or on login screen)...",
-                        _CONNECT_RETRY_DELAY,
-                    )
-                    time.sleep(_CONNECT_RETRY_DELAY)
-
-        # All retries exhausted
-        self._connection_state = "error"
-        raise QBConnectionError(
-            f"Could not connect to QuickBooks after {_CONNECT_MAX_RETRIES} attempts. "
-            f"Last error: {last_error}. "
-            f"Make sure QuickBooks is fully open with a company file loaded."
-        ) from last_error
+                    self._proc.kill()
+            self._proc = None
+        self._connection_state = "disconnected"

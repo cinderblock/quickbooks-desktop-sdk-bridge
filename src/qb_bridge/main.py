@@ -75,9 +75,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         db = await init_db(settings.db_path)
         app.state.db = db
 
+        # Load company file path from DB (overrides env/default if set)
+        from qb_bridge.database import get_setting
+
+        db_company_file = await get_setting(db, "company_file_path")
+        company_file = db_company_file or settings.company_file
+        if company_file:
+            log.info("Using company file: %s", company_file)
+
         # Start QB session manager
         qb_session = QBSessionManager(
-            company_file=settings.company_file,
+            company_file=company_file,
             idle_timeout=settings.idle_timeout,
             auto_launch_qb=settings.auto_launch_qb,
             qb_exe_path=settings.qb_exe_path,
