@@ -8,6 +8,12 @@ Protocol:
   <- {"status": "ok", "response": "..."}
   <- {"status": "error", "message": "..."}
 
+  -> {"cmd": "ping"}
+  <- {"status": "ok", "connected": true|false}
+
+  -> {"cmd": "disconnect"}
+  <- {"status": "ok"}
+
   -> {"cmd": "quit"}
   <- (process exits)
 
@@ -17,7 +23,6 @@ uvicorn's event loop / thread pool.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
 import sys
@@ -27,31 +32,17 @@ log = logging.getLogger(__name__)
 
 def main() -> None:
     import pythoncom
-    import win32com.client
 
-    # Read config from argv
+    # QBConnection must be imported after CoInitialize so it inherits STA context.
+    # We import inside main() so that worker.py can be safely imported in tests
+    # on machines without pywin32.
+    from qb_bridge.qb.connection import QBConnection
+
     company_file = sys.argv[1] if len(sys.argv) > 1 else ""
 
     pythoncom.CoInitialize()
 
-    rp = None
-    ticket = None
-
-    def connect():
-        nonlocal rp, ticket
-        rp = win32com.client.Dispatch("QBXMLRP2.RequestProcessor")
-        rp.OpenConnection2("QBBridge", "QuickBooks Bridge API", 1)
-        ticket = rp.BeginSession(company_file, 2)
-
-    def disconnect():
-        nonlocal rp, ticket
-        if rp and ticket:
-            with contextlib.suppress(Exception):
-                rp.EndSession(ticket)
-            with contextlib.suppress(Exception):
-                rp.CloseConnection()
-        rp = None
-        ticket = None
+    conn = QBConnection()
 
     # Signal ready
     sys.stdout.write(json.dumps({"status": "ready"}) + "\n")
@@ -71,26 +62,24 @@ def main() -> None:
         cmd = msg.get("cmd", "")
 
         if cmd == "quit":
-            disconnect()
+            conn.disconnect()
             break
 
         if cmd == "execute":
-            qbxml = msg.get("qbxml", "")
             try:
-                if not rp or not ticket:
-                    connect()
-
-                response = rp.ProcessRequest(ticket, qbxml)
+                if not conn.session_open:
+                    conn.connect(company_file)
+                response = conn.process_request(msg.get("qbxml", ""))
                 _respond({"status": "ok", "response": response})
             except Exception as exc:
-                disconnect()
+                conn.disconnect()
                 _respond({"status": "error", "message": str(exc)})
 
         elif cmd == "ping":
-            _respond({"status": "ok", "connected": rp is not None})
+            _respond({"status": "ok", "connected": conn.session_open})
 
         elif cmd == "disconnect":
-            disconnect()
+            conn.disconnect()
             _respond({"status": "ok"})
 
         else:
