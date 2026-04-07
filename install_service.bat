@@ -40,7 +40,9 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-set /p SVC_PASS=  Windows password:
+powershell -Command "$p = Read-Host '  Windows password' -AsSecureString; [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($p))" > "%TEMP%\qbb_pw.txt"
+set /p SVC_PASS=<"%TEMP%\qbb_pw.txt"
+del "%TEMP%\qbb_pw.txt" >nul 2>&1
 echo.
 
 echo  [1/6] Stopping and removing old service...
