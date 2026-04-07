@@ -50,6 +50,7 @@ class QBSessionManager:
         self._running = False
         self._last_activity: float = 0.0
         self._connection_state: str = "disconnected"
+        self._idle_task: asyncio.Task | None = None
 
     @property
     def state(self) -> str:
@@ -63,10 +64,18 @@ class QBSessionManager:
 
     async def start(self) -> None:
         self._running = True
-        log.info("QBSessionManager started")
+        if self.idle_timeout > 0:
+            self._idle_task = asyncio.create_task(
+                self._idle_monitor(), name="qb-idle-monitor"
+            )
+        log.info("QBSessionManager started (idle_timeout=%ds)", self.idle_timeout)
 
     async def stop(self) -> None:
         self._running = False
+        if self._idle_task and not self._idle_task.done():
+            self._idle_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._idle_task
         await self._kill_worker()
         log.info("QBSessionManager stopped")
 
@@ -123,6 +132,56 @@ class QBSessionManager:
                 # Worker will retry connection on next request
                 self._connection_state = "error"
                 raise QBConnectionError(f"QB error: {error_msg}")
+
+    async def _idle_monitor(self) -> None:
+        """Background task: disconnect QB after idle_timeout seconds of inactivity.
+
+        Sends a 'disconnect' command to the worker (ending the QB session but
+        keeping the subprocess alive for fast reconnect). If auto_close_qb is
+        set, also closes the QB Desktop process.
+        """
+        check_interval = min(60, max(10, self.idle_timeout // 6))
+        while self._running:
+            await asyncio.sleep(check_interval)
+            if not self._running:
+                break
+
+            if self._last_activity == 0:
+                # No request has been made yet; nothing to time out.
+                continue
+
+            if self.idle_seconds < self.idle_timeout:
+                continue
+
+            # We've been idle long enough — disconnect
+            log.info(
+                "QB session idle for %.0fs (threshold %ds), disconnecting",
+                self.idle_seconds,
+                self.idle_timeout,
+            )
+            async with self._lock:
+                if self._proc and self._proc.poll() is None:
+                    try:
+                        self._proc.stdin.write(json.dumps({"cmd": "disconnect"}) + "\n")
+                        self._proc.stdin.flush()
+                        # Drain the ack so stdout doesn't block on the next execute
+                        await asyncio.wait_for(
+                            asyncio.get_running_loop().run_in_executor(
+                                None, self._proc.stdout.readline
+                            ),
+                            timeout=10.0,
+                        )
+                        self._connection_state = "disconnected"
+                        self._last_activity = 0.0  # Reset so we don't fire again immediately
+                        log.info("QB session disconnected due to idle timeout")
+                    except Exception as exc:
+                        log.warning("Idle disconnect failed: %s", exc)
+
+            if self.auto_close_qb:
+                from .process import close_qb
+
+                log.info("auto_close_qb=True — closing QuickBooks Desktop")
+                close_qb()
 
     async def _start_worker(self) -> None:
         """Launch the COM worker subprocess."""
