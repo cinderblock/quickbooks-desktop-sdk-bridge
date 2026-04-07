@@ -12,7 +12,9 @@ import sys
 import time
 
 work_dir = os.path.dirname(os.path.abspath(__file__))
-pythonw_exe = os.path.join(work_dir, ".venv", "Scripts", "pythonw.exe")
+# Use python.exe not pythonw.exe — pythonw crashes silently
+# The task runs with Hidden=true so no console window appears
+python_exe = os.path.join(work_dir, ".venv", "Scripts", "python.exe")
 launcher = os.path.join(work_dir, "start_server.py")
 
 print()
@@ -75,7 +77,7 @@ xml = f"""<?xml version="1.0" encoding="UTF-16"?>
     <StartWhenAvailable>true</StartWhenAvailable>
     <AllowStartOnDemand>true</AllowStartOnDemand>
     <Enabled>true</Enabled>
-    <Hidden>false</Hidden>
+    <Hidden>true</Hidden>
     <RestartOnFailure>
       <Interval>PT1M</Interval>
       <Count>999</Count>
@@ -84,7 +86,7 @@ xml = f"""<?xml version="1.0" encoding="UTF-16"?>
   </Settings>
   <Actions>
     <Exec>
-      <Command>{pythonw_exe}</Command>
+      <Command>{python_exe}</Command>
       <Arguments>{launcher}</Arguments>
       <WorkingDirectory>{work_dir}</WorkingDirectory>
     </Exec>
