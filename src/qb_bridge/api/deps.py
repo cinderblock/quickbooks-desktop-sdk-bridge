@@ -15,6 +15,7 @@ _api_key_header = APIKeyHeader(
     name="X-API-Key",
     description="Paste your API key here. Generate one with: "
     '`python -m qb_bridge.cli create-key "name"`',
+    auto_error=False,  # Don't let FastAPI return generic 403; we handle errors ourselves
 )
 
 
@@ -30,7 +31,7 @@ def get_qb_session(request: Request) -> QBSessionManager:
 
 async def require_api_key(
     request: Request,
-    x_api_key: str = Security(_api_key_header),
+    x_api_key: str | None = Security(_api_key_header),
     db: aiosqlite.Connection = Depends(get_db),
 ) -> dict:
     """Validate the X-API-Key header. Returns the key record.
@@ -42,7 +43,11 @@ async def require_api_key(
             status_code=401,
             detail={
                 "ok": False,
-                "error": {"code": "MISSING_API_KEY", "message": "X-API-Key header required"},
+                "error": {
+                    "code": "MISSING_API_KEY",
+                    "message": "X-API-Key header is required. "
+                    "Generate one with: python -m qb_bridge.cli create-key \"name\"",
+                },
             },
         )
 
