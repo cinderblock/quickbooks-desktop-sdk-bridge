@@ -1,7 +1,7 @@
 """Thread-safe async bridge to QuickBooks COM.
 
 Architecture:
-    FastAPI async handlers → asyncio.Queue → dedicated COM worker thread.
+    FastAPI async handlers -> asyncio.Queue -> dedicated COM worker thread.
     The worker thread owns all COM objects (apartment-threaded requirement).
     Results flow back via ``loop.call_soon_threadsafe(future.set_result, ...)``.
 """
@@ -9,6 +9,7 @@ Architecture:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import queue
 import threading
@@ -16,13 +17,18 @@ import time
 from dataclasses import dataclass, field
 
 from .connection import QBConnection
-from .exceptions import QBConnectionError, QBNotRunningError, QBTimeoutError
+from .exceptions import QBConnectionError, QBNotRunningError, QBSessionError, QBTimeoutError
 from .process import is_qb_running, launch_qb
 
 log = logging.getLogger(__name__)
 
 # Sentinel to tell the worker thread to shut down
 _SHUTDOWN = object()
+
+# How long to wait between connection retries (seconds)
+_CONNECT_RETRY_DELAY = 5.0
+# Max retries when connecting (covers QB login screen, slow startup, etc.)
+_CONNECT_MAX_RETRIES = 12  # 12 * 5s = 60s total
 
 
 @dataclass
@@ -53,7 +59,7 @@ class QBSessionManager:
         auto_launch_qb: bool = True,
         qb_exe_path: str = "",
         auto_close_qb: bool = False,
-        request_timeout: float = 60.0,
+        request_timeout: float = 90.0,
     ) -> None:
         self.company_file = company_file
         self.idle_timeout = idle_timeout
@@ -66,7 +72,10 @@ class QBSessionManager:
         self._worker: threading.Thread | None = None
         self._running = False
         self._last_activity: float = 0.0
-        self._connection_state: str = "disconnected"  # disconnected | connected | error
+        self._connection_state: str = (
+            "disconnected"  # disconnected | connecting | connected | error
+        )
+        self._last_connect_attempt: float = 0.0
         self._lock = threading.Lock()
 
     @property
@@ -168,20 +177,15 @@ class QBSessionManager:
                 self._last_activity = time.monotonic()
 
                 try:
-                    # Ensure connected
+                    # Ensure connected (with retries for QB startup/login)
                     if not conn.session_open:
-                        self._ensure_qb_running()
-                        conn.connect(self.company_file)
-                        self._connection_state = "connected"
+                        self._connect_with_retry(conn)
 
                     response = conn.process_request(request.qbxml)
                     request.loop.call_soon_threadsafe(request.future.set_result, response)
                 except Exception as exc:
                     log.error("QB request failed: %s", exc, exc_info=True)
                     self._connection_state = "error"
-                    # Try to clean up the connection on error
-                    import contextlib
-
                     with contextlib.suppress(Exception):
                         conn.disconnect()
                     request.loop.call_soon_threadsafe(request.future.set_exception, exc)
@@ -191,21 +195,65 @@ class QBSessionManager:
             pythoncom.CoUninitialize()
             log.debug("COM uninitialized on worker thread")
 
-    def _ensure_qb_running(self) -> None:
-        """Launch QB Desktop if not running and auto_launch is enabled."""
-        if is_qb_running():
-            return
+    def _connect_with_retry(self, conn: QBConnection) -> None:
+        """Try to connect to QB, retrying if QB is still starting up or on login screen.
 
-        if not self.auto_launch_qb:
-            raise QBNotRunningError(
-                "QuickBooks Desktop is not running and auto_launch_qb is disabled"
-            )
+        Launches QB if not running. Retries BeginSession up to _CONNECT_MAX_RETRIES
+        times with _CONNECT_RETRY_DELAY between attempts. This handles:
+        - QB still loading after launch
+        - QB on the login/password screen
+        - QB switching company files
+        """
+        self._connection_state = "connecting"
 
-        log.info("QuickBooks not running, launching...")
-        exe = self.qb_exe_path or None
-        cf = self.company_file or None
-        if not launch_qb(
-            company_file=cf,
-            exe_path=exe or "C:\\Program Files (x86)\\Intuit\\QuickBooks 2021\\QBW32.EXE",
-        ):
-            raise QBNotRunningError("Failed to launch QuickBooks Desktop")
+        # Launch QB if not running (only once, not every retry)
+        if not is_qb_running():
+            if not self.auto_launch_qb:
+                self._connection_state = "error"
+                raise QBNotRunningError(
+                    "QuickBooks Desktop is not running and auto_launch_qb is disabled"
+                )
+            log.info("QuickBooks not running, launching...")
+            exe = self.qb_exe_path or "C:\\Program Files (x86)\\Intuit\\QuickBooks 2021\\QBW32.EXE"
+            cf = self.company_file or None
+            if not launch_qb(company_file=cf, exe_path=exe, wait_seconds=60):
+                self._connection_state = "error"
+                raise QBNotRunningError("Failed to launch QuickBooks Desktop")
+
+        last_error: Exception | None = None
+
+        for attempt in range(1, _CONNECT_MAX_RETRIES + 1):
+            if not self._running:
+                raise QBConnectionError("Shutting down")
+
+            try:
+                log.info("Connecting to QB (attempt %d/%d)...", attempt, _CONNECT_MAX_RETRIES)
+                conn.connect(self.company_file)
+                self._connection_state = "connected"
+                log.info("Connected to QuickBooks!")
+                return
+            except (QBConnectionError, QBSessionError) as exc:
+                last_error = exc
+                log.warning(
+                    "Connection attempt %d/%d failed: %s",
+                    attempt,
+                    _CONNECT_MAX_RETRIES,
+                    exc,
+                )
+                with contextlib.suppress(Exception):
+                    conn.disconnect()
+
+                if attempt < _CONNECT_MAX_RETRIES:
+                    log.info(
+                        "Retrying in %.0fs (QB may be on login screen or still loading)...",
+                        _CONNECT_RETRY_DELAY,
+                    )
+                    time.sleep(_CONNECT_RETRY_DELAY)
+
+        # All retries exhausted
+        self._connection_state = "error"
+        raise QBConnectionError(
+            f"Could not connect to QuickBooks after {_CONNECT_MAX_RETRIES} attempts. "
+            f"Last error: {last_error}. "
+            f"Make sure QuickBooks is fully open with a company file loaded."
+        ) from last_error
