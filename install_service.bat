@@ -1,23 +1,57 @@
 @echo off
-echo Installing QuickBooks Bridge as a startup task...
+REM ============================================================
+REM  QuickBooks Bridge — Windows Service Installer
+REM  Run this as Administrator!
+REM ============================================================
 
-REM Kill any existing task with this name
-schtasks /Delete /TN "QBBridge" /F >nul 2>&1
+echo.
+echo  QuickBooks Bridge - Service Installer
+echo  ======================================
+echo.
 
-REM Create a scheduled task that runs at system startup
-REM /RU = run as current user, /RL HIGHEST = admin privileges
-REM /SC ONSTART = run when the computer starts
-schtasks /Create /TN "QBBridge" /TR "\"C:\Users\chtacklind\git\QuickBooks Bridge\.venv\Scripts\pythonw.exe\" -m uvicorn qb_bridge.main:app --host 0.0.0.0 --port 8743" /SC ONSTART /RU "%USERNAME%" /RL HIGHEST /F
-
-if %ERRORLEVEL% EQU 0 (
+REM Check for admin
+net session >nul 2>&1
+if %errorlevel% neq 0 (
+    echo  ERROR: This script must be run as Administrator.
+    echo  Right-click and select "Run as administrator".
     echo.
-    echo Service installed! QuickBooks Bridge will start automatically on boot.
-    echo.
-    echo To start it now:   schtasks /Run /TN "QBBridge"
-    echo To stop it:        taskkill /IM pythonw.exe /F
-    echo To remove:         schtasks /Delete /TN "QBBridge" /F
-) else (
-    echo.
-    echo Installation failed. Try running this as Administrator.
+    pause
+    exit /b 1
 )
+
+set PYTHON=C:\Users\chtacklind\git\QuickBooks Bridge\.venv\Scripts\python.exe
+set SVC_MODULE=qb_bridge.service.svc
+set WORK_DIR=C:\Users\chtacklind\git\QuickBooks Bridge
+
+echo  [1/3] Installing service...
+cd /d "%WORK_DIR%"
+"%PYTHON%" -m %SVC_MODULE% --startup auto --username .\chtacklind --interactive install
+if %errorlevel% neq 0 (
+    echo.
+    echo  Service install failed. Trying without --username...
+    "%PYTHON%" -m %SVC_MODULE% --startup auto install
+)
+
+echo.
+echo  [2/3] Configuring failure recovery (auto-restart)...
+sc failure QBBridge reset= 86400 actions= restart/10000/restart/10000/restart/30000
+
+echo.
+echo  [3/3] Starting service...
+net start QBBridge
+
+echo.
+echo  ============================================================
+echo   Done! QuickBooks Bridge is running as a Windows Service.
+echo.
+echo   Service name:  QBBridge
+echo   API URL:       http://localhost:8743
+echo   Swagger docs:  http://localhost:8743/docs
+echo.
+echo   Manage with:
+echo     net stop QBBridge      (stop)
+echo     net start QBBridge     (start)
+echo     sc delete QBBridge     (remove)
+echo  ============================================================
+echo.
 pause
