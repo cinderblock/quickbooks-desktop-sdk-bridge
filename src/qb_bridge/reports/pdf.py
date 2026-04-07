@@ -17,6 +17,7 @@ from reportlab.platypus import (
 )
 
 from qb_bridge.qb.xml_parser import ReportData, ReportRow
+from qb_bridge.reports.formatters import format_currency, is_numeric
 
 
 def report_to_pdf(report: ReportData) -> bytes:
@@ -116,10 +117,12 @@ def _collect_rows(
     for row in rows:
         values = []
         for i, col in enumerate(col_ids):
-            val = row.values.get(col.col_id, "")
+            val = str(row.values.get(col.col_id, ""))
             if i == 0 and depth > 0:
-                val = ("  " * depth) + str(val)
-            values.append(str(val))
+                val = ("  " * depth) + val
+            elif i > 0 and is_numeric(val):
+                val = format_currency(val)
+            values.append(val)
         row_styles.append((len(table_data) - 1, row.row_type))
         table_data.append(values)
 

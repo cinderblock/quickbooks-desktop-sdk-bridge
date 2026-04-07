@@ -10,9 +10,9 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
 from qb_bridge.api.deps import get_qb_session, require_api_key, require_permission
-from qb_bridge.qb import xml_builder, xml_parser
 from qb_bridge.qb.session import QBSessionManager
 from qb_bridge.reports.csv_export import report_to_csv
+from qb_bridge.reports.engine import run_report
 from qb_bridge.reports.pdf import report_to_pdf
 
 router = APIRouter(prefix="/api/v1/reports", tags=["Reports"])
@@ -158,9 +158,7 @@ async def get_report(
     if summarize_by:
         body["SummarizeColumnsBy"] = summarize_by
 
-    request_xml = xml_builder.build_request(category.value, body)
-    response_xml = await session.execute(request_xml)
-    report_data = xml_parser.parse_report(response_xml)
+    report_data = await run_report(session, request_type=category.value, body=body)
 
     if format == "csv":
         csv_content = report_to_csv(report_data)

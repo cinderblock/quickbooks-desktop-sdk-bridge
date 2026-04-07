@@ -6,6 +6,7 @@ import csv
 import io
 
 from qb_bridge.qb.xml_parser import ReportData, ReportRow
+from qb_bridge.reports.formatters import format_currency, is_numeric
 
 
 def report_to_csv(report: ReportData) -> str:
@@ -38,10 +39,13 @@ def _write_rows(writer: csv.writer, rows: list[ReportRow], col_ids: list, depth:
     for row in rows:
         values = []
         for i, col in enumerate(col_ids):
-            val = row.values.get(col.col_id, "")
-            # Indent the first column for nested rows
+            val = str(row.values.get(col.col_id, ""))
             if i == 0 and depth > 0:
-                val = ("  " * depth) + str(val)
+                # Indent the label column for nested rows
+                val = ("  " * depth) + val
+            elif i > 0 and is_numeric(val):
+                # Format numeric data columns as currency
+                val = format_currency(val)
             values.append(val)
         writer.writerow(values)
 
