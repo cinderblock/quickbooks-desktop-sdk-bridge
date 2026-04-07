@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM  QuickBooks Bridge — Windows Service Installer
+REM  QuickBooks Bridge - Windows Service Installer
 REM  Run this as Administrator!
 REM ============================================================
 
@@ -19,25 +19,29 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-set PYTHON=C:\Users\chtacklind\git\QuickBooks Bridge\.venv\Scripts\python.exe
-set SVC_MODULE=qb_bridge.service.svc
 set WORK_DIR=C:\Users\chtacklind\git\QuickBooks Bridge
+set PYTHON=%WORK_DIR%\.venv\Scripts\python.exe
 
 echo  [1/4] Removing old service if exists...
-cd /d "%WORK_DIR%"
-"%PYTHON%" -m %SVC_MODULE% remove >nul 2>&1
+sc stop QBBridge >nul 2>&1
+sc delete QBBridge >nul 2>&1
+timeout /t 2 /nobreak >nul
 
-echo  [2/4] Installing service...
-"%PYTHON%" -m %SVC_MODULE% --startup auto install
+echo  [2/4] Installing service via NSSM pattern...
+REM sc.exe can't run Python directly, so we use a wrapper approach:
+REM Create the service pointing to cmd.exe which runs our Python
+sc create QBBridge binPath= "cmd.exe /c cd /d \"%WORK_DIR%\" && \"%PYTHON%\" -m uvicorn qb_bridge.main:app --host 0.0.0.0 --port 8743" start= auto DisplayName= "QuickBooks Bridge API"
+
 if %errorlevel% neq 0 (
     echo.
-    echo  ERROR: Service install failed.
-    echo.
+    echo  ERROR: Service creation failed.
     pause
     exit /b 1
 )
 
-echo.
+REM Set description
+sc description QBBridge "REST API bridge to QuickBooks Desktop - CRUD endpoints, report generation, real-time status"
+
 echo  [3/4] Configuring failure recovery (auto-restart)...
 sc failure QBBridge reset= 86400 actions= restart/10000/restart/10000/restart/30000
 
@@ -47,9 +51,8 @@ net start QBBridge
 
 echo.
 echo  ============================================================
-echo   Done! QuickBooks Bridge is running as a Windows Service.
+echo   Service installed: QBBridge
 echo.
-echo   Service name:  QBBridge
 echo   API URL:       http://localhost:8743
 echo   Swagger docs:  http://localhost:8743/docs
 echo.
