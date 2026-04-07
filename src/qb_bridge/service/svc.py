@@ -1,9 +1,24 @@
-"""Windows Service implementation using pywin32."""
+"""Windows Service implementation using pywin32.
+
+pythonservice.exe (the pywin32 host) needs to find our module.
+We add the project's src dir to sys.path so the import works.
+"""
 
 from __future__ import annotations
 
-import logging
+import os
 import sys
+
+# Ensure our package is importable when running under pythonservice.exe
+# which doesn't know about our project layout or venv site-packages
+_project_root = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
+_src_dir = os.path.join(_project_root, "src")
+if _src_dir not in sys.path:
+    sys.path.insert(0, _src_dir)
+
+import logging
 
 import servicemanager
 import win32event
@@ -22,6 +37,8 @@ class QBBridgeService(win32serviceutil.ServiceFramework):
         "REST API bridge to QuickBooks Desktop. "
         "Provides CRUD endpoints, report generation, and real-time status."
     )
+    # Tell pythonservice.exe where to find this module
+    _exe_name_ = os.path.join(_project_root, ".venv", "pythonservice.exe")
 
     def __init__(self, args):
         super().__init__(args)
@@ -38,15 +55,23 @@ class QBBridgeService(win32serviceutil.ServiceFramework):
 
     def SvcDoRun(self):
         """Main service entry point."""
-        servicemanager.LogMsg(
-            servicemanager.EVENTLOG_INFORMATION_TYPE,
-            servicemanager.PYS_SERVICE_STARTED,
-            (self._svc_name_, ""),
-        )
-        log.info("Service starting")
-        self.main()
+        try:
+            servicemanager.LogMsg(
+                servicemanager.EVENTLOG_INFORMATION_TYPE,
+                servicemanager.PYS_SERVICE_STARTED,
+                (self._svc_name_, ""),
+            )
 
-    def main(self):
+            # Set working directory to project root
+            os.chdir(_project_root)
+
+            log.info("Service starting from %s", _project_root)
+            self._run_server()
+        except Exception as exc:
+            servicemanager.LogErrorMsg(f"QBBridge service failed: {exc}")
+            log.error("Service failed: %s", exc, exc_info=True)
+
+    def _run_server(self):
         """Run the FastAPI/uvicorn server."""
         import uvicorn
 
@@ -71,7 +96,7 @@ class QBBridgeService(win32serviceutil.ServiceFramework):
 def main():
     """Entry point for service management commands."""
     if len(sys.argv) == 1:
-        # Running as a service
+        # Running as a service (launched by SCM)
         servicemanager.Initialize()
         servicemanager.PrepareToHostSingle(QBBridgeService)
         servicemanager.StartServiceCtrlDispatcher()

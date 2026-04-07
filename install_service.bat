@@ -23,21 +23,26 @@ set PYTHON=C:\Users\chtacklind\git\QuickBooks Bridge\.venv\Scripts\python.exe
 set SVC_MODULE=qb_bridge.service.svc
 set WORK_DIR=C:\Users\chtacklind\git\QuickBooks Bridge
 
-echo  [1/3] Installing service...
+echo  [1/4] Removing old service if exists...
 cd /d "%WORK_DIR%"
-"%PYTHON%" -m %SVC_MODULE% --startup auto --username .\chtacklind --interactive install
+"%PYTHON%" -m %SVC_MODULE% remove >nul 2>&1
+
+echo  [2/4] Installing service...
+"%PYTHON%" -m %SVC_MODULE% --startup auto install
 if %errorlevel% neq 0 (
     echo.
-    echo  Service install failed. Trying without --username...
-    "%PYTHON%" -m %SVC_MODULE% --startup auto install
+    echo  ERROR: Service install failed.
+    echo.
+    pause
+    exit /b 1
 )
 
 echo.
-echo  [2/3] Configuring failure recovery (auto-restart)...
+echo  [3/4] Configuring failure recovery (auto-restart)...
 sc failure QBBridge reset= 86400 actions= restart/10000/restart/10000/restart/30000
 
 echo.
-echo  [3/3] Starting service...
+echo  [4/4] Starting service...
 net start QBBridge
 
 echo.
