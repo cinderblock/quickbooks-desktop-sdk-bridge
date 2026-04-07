@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import subprocess
 
 log = logging.getLogger(__name__)
@@ -98,10 +97,10 @@ def launch_qb(
     """
     log.info("Launching QuickBooks: %s", exe_path)
     try:
+        cmd = [exe_path]
         if company_file:
-            os.startfile(exe_path, "open", company_file)
-        else:
-            os.startfile(exe_path)
+            cmd.append(company_file)
+        subprocess.Popen(cmd)
         return True
     except FileNotFoundError:
         log.error("QuickBooks executable not found: %s", exe_path)

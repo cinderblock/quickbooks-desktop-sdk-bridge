@@ -128,6 +128,19 @@ class QBSessionManager:
         """Launch the COM worker subprocess."""
         await self._kill_worker()
 
+        # Auto-launch QB Desktop if configured and not running
+        if self.auto_launch_qb:
+            from .process import is_qb_running, launch_qb
+
+            if not is_qb_running():
+                log.info("QuickBooks is not running — launching now")
+                launch_qb(
+                    company_file=self.company_file or None,
+                    exe_path=self.qb_exe_path,
+                )
+                # Give QB time to initialise before we try to connect
+                await asyncio.sleep(8)
+
         # Always use python.exe (not pythonw.exe) for the worker — it needs
         # working stdin/stdout pipes for our JSON protocol
         python_exe = sys.executable.replace("pythonw.exe", "python.exe")
