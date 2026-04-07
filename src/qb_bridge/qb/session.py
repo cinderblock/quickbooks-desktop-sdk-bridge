@@ -214,7 +214,7 @@ class QBSessionManager:
                     "QuickBooks Desktop is not running and auto_launch_qb is disabled"
                 )
             log.info("QuickBooks not running, launching...")
-            exe = self.qb_exe_path or "C:\\Program Files (x86)\\Intuit\\QuickBooks 2021\\QBW32.EXE"
+            exe = self.qb_exe_path or "C:\\Program Files (x86)\\Intuit\\QuickBooks 2021\\QBW32Pro.exe"
             cf = self.company_file or None
             if not launch_qb(company_file=cf, exe_path=exe, wait_seconds=60):
                 self._connection_state = "error"

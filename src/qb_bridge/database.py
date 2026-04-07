@@ -57,7 +57,7 @@ DEFAULT_SETTINGS = {
     "idle_timeout_seconds": "600",
     "auto_launch_qb": "true",
     "auto_close_qb": "false",
-    "qb_exe_path": r"C:\Program Files (x86)\Intuit\QuickBooks 2021\QBW32.EXE",
+    "qb_exe_path": r"C:\Program Files (x86)\Intuit\QuickBooks 2021\QBW32Pro.exe",
     "log_level": "INFO",
     "gui_password_hash": "",
 }

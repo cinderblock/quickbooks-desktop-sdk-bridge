@@ -8,32 +8,28 @@ import time
 
 log = logging.getLogger(__name__)
 
-QB_EXE_PATH = r"C:\Program Files (x86)\Intuit\QuickBooks 2021\QBW32.EXE"
+# All known QB Desktop executable names
+QB_EXE_NAMES = ("QBW32Pro.exe", "QBW32.EXE", "QBW.exe")
+
+# Default path to the QB executable on this machine
+QB_EXE_PATH = r"C:\Program Files (x86)\Intuit\QuickBooks 2021\QBW32Pro.exe"
 
 
 def is_qb_running() -> bool:
     """Check if any QuickBooks Desktop process is running."""
-    try:
-        result = subprocess.run(
-            ["tasklist", "/FI", "IMAGENAME eq QBW32.EXE", "/NH"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        return "QBW32.EXE" in result.stdout
-    except Exception:
-        # Also check the Pro variant
-        pass
-    try:
-        result = subprocess.run(
-            ["tasklist", "/FI", "IMAGENAME eq QBW32Pro.exe", "/NH"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        return "QBW32Pro.exe" in result.stdout
-    except Exception:
-        return False
+    for exe_name in QB_EXE_NAMES:
+        try:
+            result = subprocess.run(
+                ["tasklist", "/FI", f"IMAGENAME eq {exe_name}", "/NH"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if exe_name.lower() in result.stdout.lower():
+                return True
+        except Exception:
+            continue
+    return False
 
 
 def launch_qb(
@@ -92,7 +88,7 @@ def close_qb(force: bool = False) -> bool:
     if not is_qb_running():
         return True
 
-    for exe_name in ("QBW32.EXE", "QBW32Pro.exe"):
+    for exe_name in QB_EXE_NAMES:
         try:
             cmd = ["taskkill"]
             if force:
