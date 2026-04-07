@@ -138,6 +138,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             },
         )
 
+    # Global exception handler for QB errors
+    from fastapi.responses import JSONResponse
+    from qb_bridge.qb.exceptions import QBError
+
+    @app.exception_handler(QBError)
+    async def qb_error_handler(request, exc: QBError):
+        log.error("QB error: %s", exc, exc_info=True)
+        return JSONResponse(
+            status_code=502,
+            content={
+                "ok": False,
+                "error": {
+                    "code": type(exc).__name__,
+                    "message": str(exc),
+                    "qb_status_code": getattr(exc, "qb_status_code", None),
+                },
+            },
+        )
+
+    @app.exception_handler(Exception)
+    async def general_error_handler(request, exc: Exception):
+        log.error("Unhandled error: %s", exc, exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "ok": False,
+                "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": str(exc),
+                },
+            },
+        )
+
     # Middleware (applied in reverse order — outermost first)
     app.add_middleware(RequestLoggingMiddleware)
     app.add_middleware(IPFilterMiddleware)

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
-from qb_bridge.api.deps import get_qb_session, require_api_key
+from qb_bridge.api.deps import get_qb_session, require_api_key, require_permission
 from qb_bridge.qb import xml_builder, xml_parser
 from qb_bridge.qb.entities import EntityDef
 from qb_bridge.qb.session import QBSessionManager
@@ -43,6 +43,7 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
         async def list_entities(
             session: QBSessionManager = Depends(get_qb_session),
             key: dict = Depends(require_api_key),
+            _perm=Depends(require_permission(ent_name, "list")),
             name: str | None = Query(None, description="Filter by name (contains)"),
             active: str = Query("ActiveOnly", description="ActiveOnly | InactiveOnly | All"),
             modified_after: str | None = Query(
@@ -103,6 +104,7 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
             entity_id: str,
             session: QBSessionManager = Depends(get_qb_session),
             key: dict = Depends(require_api_key),
+            _perm=Depends(require_permission(ent_name, "get")),
         ):
             filters = {ent_id_field: entity_id}
             request_xml = xml_builder.query(ent_name, filters=filters)
@@ -131,6 +133,7 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
             body: dict = Body(...),
             session: QBSessionManager = Depends(get_qb_session),
             key: dict = Depends(require_api_key),
+            _perm=Depends(require_permission(ent_name, "create")),
         ):
             request_xml = xml_builder.add(ent_name, body)
             response_xml = await session.execute(request_xml)
@@ -150,6 +153,7 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
             body: dict = Body(...),
             session: QBSessionManager = Depends(get_qb_session),
             key: dict = Depends(require_api_key),
+            _perm=Depends(require_permission(ent_name, "update")),
         ):
             edit_sequence = body.pop("EditSequence", None) or body.pop("edit_sequence", None)
             if not edit_sequence:
@@ -185,6 +189,7 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
             entity_id: str,
             session: QBSessionManager = Depends(get_qb_session),
             key: dict = Depends(require_api_key),
+            _perm=Depends(require_permission(ent_name, "delete")),
         ):
             if ent_is_txn:
                 request_xml = xml_builder.delete(ent_name, is_transaction=True, txn_id=entity_id)

@@ -1,4 +1,4 @@
-"""API key generation, hashing, and validation."""
+"""API key generation, hashing, validation, and permission management."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ import hashlib
 import secrets
 
 import aiosqlite
+
+from .permissions import DEFAULT_PERMISSIONS, serialize_permissions
 
 PREFIX = "qbb_"
 
@@ -27,18 +29,27 @@ def hash_key(key: str) -> str:
     return hashlib.sha256(key.encode()).hexdigest()
 
 
-async def create_key(db: aiosqlite.Connection, name: str) -> tuple[int, str]:
+async def create_key(
+    db: aiosqlite.Connection,
+    name: str,
+    permissions: dict[str, list[str]] | None = None,
+) -> tuple[int, str]:
     """Create a new API key in the database.
+
+    Args:
+        name: Human label for the key.
+        permissions: Permission dict, defaults to full admin.
 
     Returns:
         ``(key_id, plaintext_key)`` — the plaintext key is shown once.
     """
     key, key_hash = generate_api_key()
-    key_prefix = key[:12] + "..."  # "qbb_abcd1234..."
+    key_prefix = key[:12] + "..."
+    perms_json = serialize_permissions(permissions or DEFAULT_PERMISSIONS)
 
     cursor = await db.execute(
-        "INSERT INTO api_keys (name, key_hash, key_prefix) VALUES (?, ?, ?)",
-        (name, key_hash, key_prefix),
+        "INSERT INTO api_keys (name, key_hash, key_prefix, permissions) VALUES (?, ?, ?, ?)",
+        (name, key_hash, key_prefix, perms_json),
     )
     await db.commit()
     return cursor.lastrowid, key
@@ -47,12 +58,14 @@ async def create_key(db: aiosqlite.Connection, name: str) -> tuple[int, str]:
 async def validate_key(db: aiosqlite.Connection, provided_key: str) -> dict | None:
     """Validate an API key against the database.
 
-    Returns the key row as a dict if valid, or None.
-    Also updates ``last_used_at``.
+    Returns the key row as a dict (including ``permissions`` as a parsed dict)
+    if valid, or None. Also updates ``last_used_at``.
     """
+    from .permissions import parse_permissions
+
     provided_hash = hash_key(provided_key)
     async with db.execute(
-        "SELECT id, name, key_prefix, is_active FROM api_keys WHERE key_hash = ?",
+        "SELECT id, name, key_prefix, is_active, permissions FROM api_keys WHERE key_hash = ?",
         (provided_hash,),
     ) as cursor:
         row = await cursor.fetchone()
@@ -70,17 +83,40 @@ async def validate_key(db: aiosqlite.Connection, provided_key: str) -> dict | No
     )
     await db.commit()
 
-    return dict(row)
+    result = dict(row)
+    result["permissions"] = parse_permissions(result.get("permissions"))
+    return result
+
+
+async def update_key_permissions(
+    db: aiosqlite.Connection, key_id: int, permissions: dict[str, list[str]]
+) -> bool:
+    """Update permissions for an existing key."""
+    perms_json = serialize_permissions(permissions)
+    cursor = await db.execute(
+        "UPDATE api_keys SET permissions = ? WHERE id = ?",
+        (perms_json, key_id),
+    )
+    await db.commit()
+    return cursor.rowcount > 0
 
 
 async def list_keys(db: aiosqlite.Connection) -> list[dict]:
     """List all API keys (without hashes)."""
+    from .permissions import parse_permissions
+
     async with db.execute(
-        "SELECT id, name, key_prefix, created_at, last_used_at, is_active "
+        "SELECT id, name, key_prefix, permissions, created_at, last_used_at, is_active "
         "FROM api_keys ORDER BY created_at DESC"
     ) as cursor:
         rows = await cursor.fetchall()
-    return [dict(row) for row in rows]
+
+    results = []
+    for row in rows:
+        d = dict(row)
+        d["permissions"] = parse_permissions(d.get("permissions"))
+        results.append(d)
+    return results
 
 
 async def revoke_key(db: aiosqlite.Connection, key_id: int) -> bool:

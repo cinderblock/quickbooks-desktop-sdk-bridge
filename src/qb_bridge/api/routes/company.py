@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from qb_bridge.api.deps import get_qb_session, require_api_key
+from qb_bridge.api.deps import get_qb_session, require_api_key, require_permission
 from qb_bridge.qb import xml_builder, xml_parser
 from qb_bridge.qb.session import QBSessionManager
 
@@ -19,6 +19,7 @@ router = APIRouter(prefix="/api/v1", tags=["Company"])
 async def get_company(
     session: QBSessionManager = Depends(get_qb_session),
     _key: dict = Depends(require_api_key),
+    _perm=Depends(require_permission("Company", "get")),
 ):
     request_xml = xml_builder.build_request("CompanyQueryRq")
     response_xml = await session.execute(request_xml)
@@ -34,6 +35,7 @@ async def get_company(
 async def get_preferences(
     session: QBSessionManager = Depends(get_qb_session),
     _key: dict = Depends(require_api_key),
+    _perm=Depends(require_permission("Company", "get")),
 ):
     request_xml = xml_builder.build_request("PreferencesQueryRq")
     response_xml = await session.execute(request_xml)

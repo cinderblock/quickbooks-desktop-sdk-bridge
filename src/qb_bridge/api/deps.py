@@ -1,4 +1,4 @@
-"""FastAPI dependency injection — QB session, auth, database."""
+"""FastAPI dependency injection — QB session, auth, database, permissions."""
 
 from __future__ import annotations
 
@@ -7,15 +7,14 @@ from fastapi import Depends, HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
 
 from qb_bridge.auth.api_keys import validate_key
+from qb_bridge.auth.permissions import check_permission
 from qb_bridge.qb.session import QBSessionManager
 
-# Declares the security scheme in OpenAPI — Swagger UI shows an "Authorize"
-# button where you paste your key once, and it's sent on every request.
 _api_key_header = APIKeyHeader(
     name="X-API-Key",
     description="Paste your API key here. Generate one with: "
     '`python -m qb_bridge.cli create-key "name"`',
-    auto_error=False,  # Don't let FastAPI return generic 403; we handle errors ourselves
+    auto_error=False,
 )
 
 
@@ -34,10 +33,7 @@ async def require_api_key(
     x_api_key: str | None = Security(_api_key_header),
     db: aiosqlite.Connection = Depends(get_db),
 ) -> dict:
-    """Validate the X-API-Key header. Returns the key record.
-
-    Raises 401 if missing/invalid.
-    """
+    """Validate the X-API-Key header. Returns the key record (with parsed permissions)."""
     if not x_api_key:
         raise HTTPException(
             status_code=401,
@@ -45,8 +41,8 @@ async def require_api_key(
                 "ok": False,
                 "error": {
                     "code": "MISSING_API_KEY",
-                    "message": "X-API-Key header is required. "
-                    "Generate one with: python -m qb_bridge.cli create-key \"name\"",
+                    "message": 'X-API-Key header is required. '
+                    'Generate one with: python -m qb_bridge.cli create-key "name"',
                 },
             },
         )
@@ -61,8 +57,39 @@ async def require_api_key(
             },
         )
 
-    # Stash for audit logging
+    # Stash for audit logging and permission checks in route handlers
     request.state.api_key_id = key_record["id"]
     request.state.api_key_name = key_record["name"]
+    request.state.permissions = key_record["permissions"]
 
     return key_record
+
+
+def require_permission(entity: str, operation: str):
+    """Factory that returns a dependency checking a specific permission.
+
+    Usage in route::
+
+        @router.get("/customers")
+        async def list_customers(
+            key: dict = Depends(require_api_key),
+            _perm = Depends(require_permission("Customer", "list")),
+        ):
+            ...
+    """
+
+    async def _check(request: Request, key: dict = Depends(require_api_key)) -> None:
+        perms = key.get("permissions", {})
+        if not check_permission(perms, entity, operation):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "ok": False,
+                    "error": {
+                        "code": "FORBIDDEN",
+                        "message": f"This API key does not have '{operation}' permission on '{entity}'",
+                    },
+                },
+            )
+
+    return _check

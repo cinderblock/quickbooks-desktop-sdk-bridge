@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
     name        TEXT NOT NULL,
     key_hash    TEXT NOT NULL UNIQUE,
     key_prefix  TEXT NOT NULL DEFAULT '',
+    permissions TEXT NOT NULL DEFAULT '{"*":["read"]}',
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     last_used_at TEXT,
     is_active   INTEGER NOT NULL DEFAULT 1
@@ -70,6 +71,26 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
     db.row_factory = aiosqlite.Row
 
     await db.executescript(SCHEMA_SQL)
+
+    # Migration: add permissions column if missing (existing DBs)
+    try:
+        await db.execute(
+            "ALTER TABLE api_keys ADD COLUMN permissions TEXT NOT NULL DEFAULT '{\"*\":[\"read\"]}'"
+        )
+        await db.commit()
+        log.info("Migrated: added permissions column to api_keys (default: read-only)")
+    except Exception:
+        pass  # Column already exists
+
+    # Migration: convert existing admin keys to read-only
+    # Keys that still have the old default get downgraded
+    cursor = await db.execute(
+        "UPDATE api_keys SET permissions = '{\"*\":[\"read\"]}' "
+        "WHERE permissions = '{\"*\":[\"admin\"]}'"
+    )
+    if cursor.rowcount:
+        await db.commit()
+        log.info("Migrated: converted %d existing key(s) to read-only", cursor.rowcount)
 
     # Seed default settings
     for key, value in DEFAULT_SETTINGS.items():

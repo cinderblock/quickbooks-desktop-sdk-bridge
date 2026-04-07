@@ -9,7 +9,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
-from qb_bridge.api.deps import get_qb_session, require_api_key
+from qb_bridge.api.deps import get_qb_session, require_api_key, require_permission
 from qb_bridge.qb import xml_builder, xml_parser
 from qb_bridge.qb.session import QBSessionManager
 from qb_bridge.reports.csv_export import report_to_csv
@@ -89,6 +89,7 @@ REPORT_DEFS: dict[str, tuple[ReportCategory, str, str]] = {
 )
 async def list_reports(
     key: dict = Depends(require_api_key),
+    _perm=Depends(require_permission("Report", "list")),
 ):
     reports = []
     for slug, (category, _qb_type, display_name) in REPORT_DEFS.items():
@@ -116,6 +117,7 @@ async def get_report(
     report_slug: str,
     session: QBSessionManager = Depends(get_qb_session),
     _key: dict = Depends(require_api_key),
+    _perm=Depends(require_permission("Report", "get")),
     from_date: str | None = Query(None, description="Start date YYYY-MM-DD"),
     to_date: str | None = Query(None, description="End date YYYY-MM-DD"),
     date_macro: str | None = Query(
