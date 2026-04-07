@@ -25,3 +25,4 @@ Desktop.ini
 *.db
 *.sqlite
 .env
+nssm.exe

@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM  QuickBooks Bridge - Windows Service Installer
+REM  QuickBooks Bridge - Windows Service Installer (using NSSM)
 REM  Run this as Administrator!
 REM ============================================================
 
@@ -20,38 +20,56 @@ if %errorlevel% neq 0 (
 )
 
 set WORK_DIR=C:\Users\chtacklind\git\QuickBooks Bridge
+set NSSM=%WORK_DIR%\nssm.exe
 set PYTHON=%WORK_DIR%\.venv\Scripts\python.exe
 
-echo  [1/4] Removing old service if exists...
+echo  [1/5] Stopping and removing old service...
+"%NSSM%" stop QBBridge >nul 2>&1
+"%NSSM%" remove QBBridge confirm >nul 2>&1
 sc stop QBBridge >nul 2>&1
 sc delete QBBridge >nul 2>&1
 timeout /t 2 /nobreak >nul
 
-echo  [2/4] Installing service via NSSM pattern...
-REM sc.exe can't run Python directly, so we use a wrapper approach:
-REM Create the service pointing to cmd.exe which runs our Python
-sc create QBBridge binPath= "cmd.exe /c cd /d \"%WORK_DIR%\" && \"%PYTHON%\" -m uvicorn qb_bridge.main:app --host 0.0.0.0 --port 8743" start= auto DisplayName= "QuickBooks Bridge API"
+echo  [2/5] Killing any leftover python on port 8743...
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8743.*LISTEN"') do taskkill /PID %%a /F >nul 2>&1
+timeout /t 2 /nobreak >nul
 
-if %errorlevel% neq 0 (
-    echo.
-    echo  ERROR: Service creation failed.
-    pause
-    exit /b 1
-)
+echo  [3/5] Installing service with NSSM...
+"%NSSM%" install QBBridge "%PYTHON%" -m uvicorn qb_bridge.main:app --host 0.0.0.0 --port 8743
+"%NSSM%" set QBBridge AppDirectory "%WORK_DIR%"
+"%NSSM%" set QBBridge DisplayName "QuickBooks Bridge API"
+"%NSSM%" set QBBridge Description "REST API bridge to QuickBooks Desktop"
+"%NSSM%" set QBBridge Start SERVICE_AUTO_START
+"%NSSM%" set QBBridge AppStdout C:\ProgramData\QBBridge\logs\service_stdout.log
+"%NSSM%" set QBBridge AppStderr C:\ProgramData\QBBridge\logs\service_stderr.log
+"%NSSM%" set QBBridge AppStdoutCreationDisposition 4
+"%NSSM%" set QBBridge AppStderrCreationDisposition 4
+"%NSSM%" set QBBridge AppRotateFiles 1
+"%NSSM%" set QBBridge AppRotateBytes 10485760
+"%NSSM%" set QBBridge AppRestartDelay 5000
 
-REM Set description
-sc description QBBridge "REST API bridge to QuickBooks Desktop - CRUD endpoints, report generation, real-time status"
-
-echo  [3/4] Configuring failure recovery (auto-restart)...
+echo.
+echo  [4/5] Configuring failure recovery...
 sc failure QBBridge reset= 86400 actions= restart/10000/restart/10000/restart/30000
 
 echo.
-echo  [4/4] Starting service...
+echo  [5/5] Starting service...
 net start QBBridge
+
+timeout /t 5 /nobreak >nul
+
+echo.
+REM Quick health check
+curl -s http://localhost:8743/ >nul 2>&1
+if %errorlevel% equ 0 (
+    echo  SUCCESS! API is responding.
+) else (
+    echo  Service started. API may need a few seconds to be ready.
+)
 
 echo.
 echo  ============================================================
-echo   Service installed: QBBridge
+echo   Service installed: QBBridge  (via NSSM)
 echo.
 echo   API URL:       http://localhost:8743
 echo   Swagger docs:  http://localhost:8743/docs
@@ -59,7 +77,9 @@ echo.
 echo   Manage with:
 echo     net stop QBBridge      (stop)
 echo     net start QBBridge     (start)
-echo     sc delete QBBridge     (remove)
+echo     nssm remove QBBridge   (remove)
+echo.
+echo   Logs at: C:\ProgramData\QBBridge\logs\
 echo  ============================================================
 echo.
 pause
