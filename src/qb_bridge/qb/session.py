@@ -17,8 +17,8 @@ import time
 from dataclasses import dataclass, field
 
 from .connection import QBConnection
-from .exceptions import QBConnectionError, QBNotRunningError, QBSessionError, QBTimeoutError
-from .process import is_qb_running, launch_qb
+from .exceptions import QBConnectionError, QBSessionError, QBTimeoutError
+from .process import QB_EXE_PATH, launch_qb
 
 log = logging.getLogger(__name__)
 
@@ -196,30 +196,18 @@ class QBSessionManager:
             log.debug("COM uninitialized on worker thread")
 
     def _connect_with_retry(self, conn: QBConnection) -> None:
-        """Try to connect to QB, retrying if QB is still starting up or on login screen.
+        """Try to connect to QB with retries.
 
-        Launches QB if not running. Retries BeginSession up to _CONNECT_MAX_RETRIES
-        times with _CONNECT_RETRY_DELAY between attempts. This handles:
+        The COM BeginSession call is the only reliable way to know if QB is
+        ready — process detection is unreliable across 32/64-bit boundaries.
+        We just retry the actual connection, which handles:
         - QB still loading after launch
         - QB on the login/password screen
         - QB switching company files
+        - QB not running (launches it on first attempt if auto_launch is on)
         """
         self._connection_state = "connecting"
-
-        # Launch QB if not running (only once, not every retry)
-        if not is_qb_running():
-            if not self.auto_launch_qb:
-                self._connection_state = "error"
-                raise QBNotRunningError(
-                    "QuickBooks Desktop is not running and auto_launch_qb is disabled"
-                )
-            log.info("QuickBooks not running, launching...")
-            exe = self.qb_exe_path or "C:\\Program Files (x86)\\Intuit\\QuickBooks 2021\\QBW32Pro.exe"
-            cf = self.company_file or None
-            if not launch_qb(company_file=cf, exe_path=exe, wait_seconds=60):
-                self._connection_state = "error"
-                raise QBNotRunningError("Failed to launch QuickBooks Desktop")
-
+        launched = False
         last_error: Exception | None = None
 
         for attempt in range(1, _CONNECT_MAX_RETRIES + 1):
@@ -243,9 +231,17 @@ class QBSessionManager:
                 with contextlib.suppress(Exception):
                     conn.disconnect()
 
+                # Try launching QB once if auto_launch is enabled
+                if not launched and self.auto_launch_qb:
+                    launched = True
+                    exe = self.qb_exe_path or QB_EXE_PATH
+                    cf = self.company_file or None
+                    log.info("Attempting to launch QuickBooks...")
+                    launch_qb(company_file=cf, exe_path=exe)
+
                 if attempt < _CONNECT_MAX_RETRIES:
                     log.info(
-                        "Retrying in %.0fs (QB may be on login screen or still loading)...",
+                        "Retrying in %.0fs (QB may still be loading or on login screen)...",
                         _CONNECT_RETRY_DELAY,
                     )
                     time.sleep(_CONNECT_RETRY_DELAY)

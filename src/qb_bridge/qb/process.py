@@ -3,33 +3,88 @@
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
-import time
 
 log = logging.getLogger(__name__)
-
-# All known QB Desktop executable names
-QB_EXE_NAMES = ("QBW32Pro.exe", "QBW32.EXE", "QBW.exe")
 
 # Default path to the QB executable on this machine
 QB_EXE_PATH = r"C:\Program Files (x86)\Intuit\QuickBooks 2021\QBW32Pro.exe"
 
 
 def is_qb_running() -> bool:
-    """Check if any QuickBooks Desktop process is running."""
-    for exe_name in QB_EXE_NAMES:
-        try:
-            result = subprocess.run(
-                ["tasklist", "/FI", f"IMAGENAME eq {exe_name}", "/NH"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            if exe_name.lower() in result.stdout.lower():
-                return True
-        except Exception:
-            continue
+    """Best-effort check if QuickBooks Desktop is running.
+
+    Uses ctypes CreateToolhelp32Snapshot (works from both 32/64-bit Python).
+    Note: may not detect QB in all cases due to session isolation.
+    """
+    try:
+        import ctypes
+        import ctypes.wintypes
+
+        TH32CS_SNAPPROCESS = 0x00000002
+
+        class PROCESSENTRY32W(ctypes.Structure):
+            _fields_ = [
+                ("dwSize", ctypes.wintypes.DWORD),
+                ("cntUsage", ctypes.wintypes.DWORD),
+                ("th32ProcessID", ctypes.wintypes.DWORD),
+                ("th32DefaultHeapID", ctypes.POINTER(ctypes.c_ulong)),
+                ("th32ModuleID", ctypes.wintypes.DWORD),
+                ("cntThreads", ctypes.wintypes.DWORD),
+                ("th32ParentProcessID", ctypes.wintypes.DWORD),
+                ("pcPriClassBase", ctypes.c_long),
+                ("dwFlags", ctypes.wintypes.DWORD),
+                ("szExeFile", ctypes.c_wchar * 260),
+            ]
+
+        k32 = ctypes.windll.kernel32
+        snap = k32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+        entry = PROCESSENTRY32W()
+        entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+
+        if k32.Process32FirstW(snap, ctypes.byref(entry)):
+            while True:
+                name = entry.szExeFile.lower()
+                if "qbw32" in name:
+                    k32.CloseHandle(snap)
+                    return True
+                if not k32.Process32NextW(snap, ctypes.byref(entry)):
+                    break
+        k32.CloseHandle(snap)
+    except Exception as exc:
+        log.debug("Process detection failed: %s", exc)
+
     return False
+
+
+def can_connect_to_qb() -> bool:
+    """Try a lightweight COM connection to see if QB is ready.
+
+    This is the most reliable way to check — if BeginSession works, QB is open.
+    """
+    try:
+        import pythoncom
+        import win32com.client
+
+        pythoncom.CoInitialize()
+        try:
+            rp = win32com.client.Dispatch("QBXMLRP2.RequestProcessor")
+            rp.OpenConnection2("QBBridgeProbe", "QB Bridge Probe", 1)
+            ticket = rp.BeginSession("", 2)
+            rp.EndSession(ticket)
+            rp.CloseConnection()
+            return True
+        except Exception:
+            import contextlib
+
+            with contextlib.suppress(Exception):
+                rp.CloseConnection()
+            return False
+        finally:
+            pythoncom.CoUninitialize()
+    except Exception:
+        return False
 
 
 def launch_qb(
@@ -37,27 +92,17 @@ def launch_qb(
     exe_path: str = QB_EXE_PATH,
     wait_seconds: int = 30,
 ) -> bool:
-    """Launch QuickBooks Desktop and wait for it to be ready.
+    """Launch QuickBooks Desktop.
 
-    Args:
-        company_file: Path to .qbw file to open, or None for default.
-        exe_path: Path to QB executable.
-        wait_seconds: Max seconds to wait for QB to start.
-
-    Returns:
-        True if QB is running after this call.
+    Returns True if the launch command was issued (QB may still be loading).
     """
-    if is_qb_running():
-        log.info("QuickBooks is already running")
-        return True
-
-    cmd = [exe_path]
-    if company_file:
-        cmd.append(company_file)
-
-    log.info("Launching QuickBooks: %s", cmd)
+    log.info("Launching QuickBooks: %s", exe_path)
     try:
-        subprocess.Popen(cmd)
+        if company_file:
+            os.startfile(exe_path, "open", company_file)
+        else:
+            os.startfile(exe_path)
+        return True
     except FileNotFoundError:
         log.error("QuickBooks executable not found: %s", exe_path)
         return False
@@ -65,38 +110,16 @@ def launch_qb(
         log.error("Failed to launch QuickBooks: %s", exc)
         return False
 
-    # Poll until QB is in the process list
-    deadline = time.monotonic() + wait_seconds
-    while time.monotonic() < deadline:
-        if is_qb_running():
-            # Give QB a few more seconds to fully initialize
-            time.sleep(3)
-            log.info("QuickBooks is running")
-            return True
-        time.sleep(1)
-
-    log.error("QuickBooks did not start within %d seconds", wait_seconds)
-    return False
-
 
 def close_qb(force: bool = False) -> bool:
-    """Close QuickBooks Desktop gracefully.
-
-    Uses taskkill with /F only if force=True.
-    Returns True if QB is no longer running.
-    """
-    if not is_qb_running():
+    """Close QuickBooks Desktop. Returns True if close was attempted."""
+    try:
+        subprocess.run(
+            ["powershell", "-Command", "Stop-Process -Name 'QBW32' -Force -ErrorAction SilentlyContinue"],
+            capture_output=True,
+            timeout=15,
+        )
         return True
-
-    for exe_name in QB_EXE_NAMES:
-        try:
-            cmd = ["taskkill"]
-            if force:
-                cmd.append("/F")
-            cmd.extend(["/IM", exe_name])
-            subprocess.run(cmd, capture_output=True, timeout=15)
-        except Exception as exc:
-            log.warning("taskkill %s failed: %s", exe_name, exc)
-
-    time.sleep(2)
-    return not is_qb_running()
+    except Exception as exc:
+        log.warning("close_qb failed: %s", exc)
+        return False
