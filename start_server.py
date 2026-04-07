@@ -14,8 +14,8 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 log_dir = r"C:\ProgramData\QBBridge\logs"
 os.makedirs(log_dir, exist_ok=True)
 
-sys.stdout = open(os.path.join(log_dir, "service_stdout.log"), "a", encoding="utf-8")
-sys.stderr = open(os.path.join(log_dir, "service_stderr.log"), "a", encoding="utf-8")
+sys.stdout = open(os.path.join(log_dir, "task_stdout.log"), "a", encoding="utf-8")
+sys.stderr = open(os.path.join(log_dir, "task_stderr.log"), "a", encoding="utf-8")
 
 import uvicorn
 

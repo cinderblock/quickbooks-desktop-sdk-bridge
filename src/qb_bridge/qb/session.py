@@ -128,7 +128,9 @@ class QBSessionManager:
         """Launch the COM worker subprocess."""
         await self._kill_worker()
 
-        python_exe = sys.executable
+        # Always use python.exe (not pythonw.exe) for the worker — it needs
+        # working stdin/stdout pipes for our JSON protocol
+        python_exe = sys.executable.replace("pythonw.exe", "python.exe")
         cmd = [python_exe, WORKER_SCRIPT, self.company_file]
 
         log.info("Starting QB worker subprocess: %s", " ".join(cmd))
