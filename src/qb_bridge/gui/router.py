@@ -25,13 +25,19 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 gui_router = APIRouter(prefix="/gui", tags=["GUI"])
 
-SESSION_SECRET = "qb-bridge-gui-session-secret"  # Overridden at runtime from DB
+_SESSION_SECRET = "qb-bridge-gui-session-secret-placeholder"
 SESSION_COOKIE = "qbb_session"
 SESSION_MAX_AGE = 86400  # 24 hours
 
 
+def set_session_secret(secret: str) -> None:
+    """Called at app startup with the secret loaded from (or saved to) the DB."""
+    global _SESSION_SECRET
+    _SESSION_SECRET = secret
+
+
 def _get_serializer() -> URLSafeTimedSerializer:
-    return URLSafeTimedSerializer(SESSION_SECRET)
+    return URLSafeTimedSerializer(_SESSION_SECRET)
 
 
 def _check_session(request: Request) -> bool:
@@ -77,7 +83,9 @@ async def login(
 
     token = _get_serializer().dumps({"user": "admin"})
     response = RedirectResponse("/gui/", status_code=303)
-    response.set_cookie(SESSION_COOKIE, token, httponly=True, max_age=SESSION_MAX_AGE)
+    response.set_cookie(
+        SESSION_COOKIE, token, httponly=True, max_age=SESSION_MAX_AGE, samesite="strict"
+    )
     return response
 
 

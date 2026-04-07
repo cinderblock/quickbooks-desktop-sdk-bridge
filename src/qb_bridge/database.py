@@ -61,6 +61,8 @@ DEFAULT_SETTINGS = {
     "qb_exe_path": r"C:\Program Files (x86)\Intuit\QuickBooks 2021\QBW32Pro.exe",
     "log_level": "INFO",
     "gui_password_hash": "",
+    # Generated randomly on first startup; stored so sessions survive restarts
+    "gui_session_secret": "",
 }
 
 

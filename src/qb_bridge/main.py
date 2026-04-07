@@ -76,10 +76,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.db = db
 
         # Load company file path from DB (overrides env/default if set)
-        from qb_bridge.database import get_setting
+        from qb_bridge.database import get_setting, set_setting
 
         db_company_file = await get_setting(db, "company_file_path")
         company_file = db_company_file or settings.company_file
+
+        # Ensure the GUI session secret is persisted in the DB.
+        # If it was never set, generate a random one and save it so that
+        # sessions survive service restarts.
+        import secrets as _secrets
+
+        gui_secret = await get_setting(db, "gui_session_secret")
+        if not gui_secret:
+            gui_secret = _secrets.token_hex(32)
+            await set_setting(db, "gui_session_secret", gui_secret)
+            log.info("Generated new GUI session secret")
+
+        try:
+            from qb_bridge.gui.router import set_session_secret
+
+            set_session_secret(gui_secret)
+        except ImportError:
+            pass
         if company_file:
             log.info("Using company file: %s", company_file)
 
