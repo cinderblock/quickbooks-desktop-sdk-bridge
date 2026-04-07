@@ -95,7 +95,7 @@ class QBSessionManager:
             # Read response (with timeout)
             try:
                 response_line = await asyncio.wait_for(
-                    asyncio.get_event_loop().run_in_executor(None, self._proc.stdout.readline),
+                    asyncio.get_running_loop().run_in_executor(None, self._proc.stdout.readline),
                     timeout=self.request_timeout,
                 )
             except TimeoutError as exc:
@@ -146,7 +146,7 @@ class QBSessionManager:
         # Wait for "ready" message
         try:
             ready_line = await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(None, self._proc.stdout.readline),
+                asyncio.get_running_loop().run_in_executor(None, self._proc.stdout.readline),
                 timeout=30.0,
             )
             ready = json.loads(ready_line)
