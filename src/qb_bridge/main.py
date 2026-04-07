@@ -112,9 +112,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "**IP Restriction:** Only private network IPs (10.x, 172.16-31.x, 192.168.x, 127.x) are allowed."
         ),
         lifespan=lifespan,
-        docs_url="/docs",
+        docs_url=None,  # We mount our own with persistAuth
         redoc_url="/redoc",
+        swagger_ui_oauth2_redirect_url=None,
     )
+
+    # Custom Swagger UI with localStorage persistence for API key
+    from fastapi.openapi.docs import get_swagger_ui_html
+
+    @app.get("/docs", include_in_schema=False)
+    async def custom_swagger_ui():
+        return get_swagger_ui_html(
+            openapi_url=app.openapi_url,
+            title=app.title + " - Docs",
+            swagger_ui_parameters={
+                "persistAuthorization": True,  # Saves API key to localStorage
+            },
+        )
 
     # Middleware (applied in reverse order — outermost first)
     app.add_middleware(RequestLoggingMiddleware)
