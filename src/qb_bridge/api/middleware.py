@@ -10,6 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import JSONResponse
 
 from qb_bridge.auth.ip_filter import is_private_ip
+from qb_bridge.database import log_request as _db_log_request
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ class IPFilterMiddleware(BaseHTTPMiddleware):
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """Log every request with timing info."""
+    """Log every request with timing info and write API requests to the audit log."""
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         start = time.monotonic()
@@ -65,7 +66,28 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             duration_ms,
         )
 
-        # Store timing for audit log (picked up by deps if needed)
         response.headers["X-Response-Time-Ms"] = f"{duration_ms:.1f}"
+
+        # Write audit log for /api/v1/* requests only
+        if request.url.path.startswith("/api/v1/"):
+            try:
+                db = request.app.state.db
+                # api_key_id is set by require_api_key dep; absent on 401/unauthenticated paths
+                api_key_id = getattr(request.state, "api_key_id", None)
+                error_detail = None
+                if response.status_code >= 400:
+                    error_detail = str(response.status_code)
+                await _db_log_request(
+                    db,
+                    api_key_id=api_key_id,
+                    client_ip=client_ip,
+                    method=request.method,
+                    path=request.url.path,
+                    status_code=response.status_code,
+                    duration_ms=round(duration_ms, 2),
+                    error=error_detail,
+                )
+            except Exception:
+                log.exception("Failed to write audit log entry")
 
         return response
