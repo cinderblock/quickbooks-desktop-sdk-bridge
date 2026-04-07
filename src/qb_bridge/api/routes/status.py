@@ -17,6 +17,18 @@ _start_time = time.monotonic()
 
 
 @router.get(
+    "/health",
+    summary="Public health check",
+    description=(
+        "Returns 200 if the service is accepting requests. "
+        "No authentication required — safe for load-balancers and uptime monitors."
+    ),
+)
+async def health_check():
+    return {"ok": True, "status": "up"}
+
+
+@router.get(
     "/status",
     summary="Service health check",
     description="Returns QB connection status, uptime, and whether QuickBooks Desktop is running.",
