@@ -16,6 +16,7 @@ class EntityDef:
     supports_query: bool = True
     supports_delete: bool = False
     is_transaction: bool = False  # True → TxnID + TxnDel; False → ListID + ListDel
+    supports_iterator: bool = False  # qbXML DTD includes iterator attribute
     id_field: str = "ListID"
     description: str = ""
 
@@ -57,6 +58,7 @@ ENTITIES: dict[str, EntityDef] = {
         supports_mod=True,
         supports_query=True,
         supports_delete=True,
+        supports_iterator=True,
         description="Customers and jobs",
     ),
     "Vendor": EntityDef(
@@ -66,6 +68,7 @@ ENTITIES: dict[str, EntityDef] = {
         supports_mod=True,
         supports_query=True,
         supports_delete=True,
+        supports_iterator=True,
         description="Vendors / suppliers",
     ),
     "Employee": EntityDef(
@@ -84,6 +87,7 @@ ENTITIES: dict[str, EntityDef] = {
         supports_mod=False,
         supports_query=True,
         supports_delete=False,
+        supports_iterator=True,
         description="All item types (service, inventory, non-inventory, etc.)",
     ),
     "ItemService": EntityDef(
@@ -93,6 +97,7 @@ ENTITIES: dict[str, EntityDef] = {
         supports_mod=True,
         supports_query=True,
         supports_delete=True,
+        supports_iterator=True,
         description="Service items",
     ),
     "ItemInventory": EntityDef(
@@ -102,6 +107,7 @@ ENTITIES: dict[str, EntityDef] = {
         supports_mod=True,
         supports_query=True,
         supports_delete=True,
+        supports_iterator=True,
         description="Inventory items",
     ),
     "ItemNonInventory": EntityDef(
@@ -111,6 +117,7 @@ ENTITIES: dict[str, EntityDef] = {
         supports_mod=True,
         supports_query=True,
         supports_delete=True,
+        supports_iterator=True,
         description="Non-inventory items",
     ),
     "Invoice": EntityDef(
@@ -121,6 +128,7 @@ ENTITIES: dict[str, EntityDef] = {
         supports_query=True,
         supports_delete=True,
         is_transaction=True,
+        supports_iterator=True,
         id_field="TxnID",
         description="Sales invoices",
     ),
@@ -132,6 +140,7 @@ ENTITIES: dict[str, EntityDef] = {
         supports_query=True,
         supports_delete=True,
         is_transaction=True,
+        supports_iterator=True,
         id_field="TxnID",
         description="Vendor bills",
     ),
@@ -143,6 +152,7 @@ ENTITIES: dict[str, EntityDef] = {
         supports_query=True,
         supports_delete=True,
         is_transaction=True,
+        supports_iterator=True,
         id_field="TxnID",
         description="Customer payments received",
     ),
@@ -154,6 +164,7 @@ ENTITIES: dict[str, EntityDef] = {
         supports_query=True,
         supports_delete=True,
         is_transaction=True,
+        supports_iterator=True,
         id_field="TxnID",
         description="General journal entries",
     ),
@@ -165,6 +176,7 @@ ENTITIES: dict[str, EntityDef] = {
         supports_query=True,
         supports_delete=True,
         is_transaction=True,
+        supports_iterator=True,
         id_field="TxnID",
         description="Estimates / quotes",
     ),
@@ -176,6 +188,7 @@ ENTITIES: dict[str, EntityDef] = {
         supports_query=True,
         supports_delete=True,
         is_transaction=True,
+        supports_iterator=True,
         id_field="TxnID",
         description="Sales receipts (immediate payment)",
     ),
@@ -187,6 +200,7 @@ ENTITIES: dict[str, EntityDef] = {
         supports_query=True,
         supports_delete=True,
         is_transaction=True,
+        supports_iterator=True,
         id_field="TxnID",
         description="Customer credit memos",
     ),
@@ -198,6 +212,7 @@ ENTITIES: dict[str, EntityDef] = {
         supports_query=True,
         supports_delete=True,
         is_transaction=True,
+        supports_iterator=True,
         id_field="TxnID",
         description="Purchase orders",
     ),
@@ -245,6 +260,7 @@ ENTITIES: dict[str, EntityDef] = {
         supports_query=True,
         supports_delete=True,
         is_transaction=True,
+        supports_iterator=True,
         id_field="TxnID",
         description="Written checks",
     ),
@@ -256,6 +272,7 @@ ENTITIES: dict[str, EntityDef] = {
         supports_query=True,
         supports_delete=True,
         is_transaction=True,
+        supports_iterator=True,
         id_field="TxnID",
         description="Bank deposits",
     ),
@@ -267,6 +284,7 @@ ENTITIES: dict[str, EntityDef] = {
         supports_query=True,
         supports_delete=True,
         is_transaction=True,
+        supports_iterator=True,
         id_field="TxnID",
         description="Bill payments by check",
     ),

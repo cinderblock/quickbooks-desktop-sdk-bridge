@@ -17,6 +17,7 @@ from tests.conftest import (
     ACCOUNT_LIST_ITERATOR_RESPONSE,
     ACCOUNT_LIST_RESPONSE,
     CHECK_DETAIL_RESPONSE,
+    CUSTOMER_LIST_ITERATOR_RESPONSE,
     REPORT_RESPONSE,
     FakeQBSession,
 )
@@ -173,22 +174,26 @@ class TestIteratorPagination:
     - ``iterator="Start"`` as an XML *attribute* on the ``*QueryRq`` element
     - ``iterator="Continue" iteratorID="..."`` on subsequent requests
     - ``iteratorID`` and ``iteratorRemainingCount`` extracted from the response
+
+    Only certain entity types support iterators in the qbXML DTD.
+    Customer supports it; Account does not.
     """
 
     async def test_iterator_start(self, client, fake_qb_session: FakeQBSession):
         """iterator_id=Start must produce iterator='Start' attribute."""
-        fake_qb_session.response_xml = ACCOUNT_LIST_ITERATOR_RESPONSE
-        resp = await client.get("/api/v1/accounts?max_returned=10&iterator_id=Start")
+        fake_qb_session.response_xml = CUSTOMER_LIST_ITERATOR_RESPONSE
+        resp = await client.get("/api/v1/customers?max_returned=10&iterator_id=Start")
         assert resp.status_code == 200
 
         rq = fake_qb_session.find_request_element()
+        assert rq.tag == "CustomerQueryRq"
         assert rq.get("iterator") == "Start", "Should be iterator='Start' attribute"
         assert rq.get("iteratorID") is None, "Start request must not have iteratorID"
         assert rq.find("MaxReturned").text == "10"
 
     async def test_iterator_start_case_insensitive(self, client, fake_qb_session: FakeQBSession):
-        fake_qb_session.response_xml = ACCOUNT_LIST_ITERATOR_RESPONSE
-        resp = await client.get("/api/v1/accounts?max_returned=10&iterator_id=start")
+        fake_qb_session.response_xml = CUSTOMER_LIST_ITERATOR_RESPONSE
+        resp = await client.get("/api/v1/customers?max_returned=10&iterator_id=start")
         assert resp.status_code == 200
 
         rq = fake_qb_session.find_request_element()
@@ -196,9 +201,9 @@ class TestIteratorPagination:
 
     async def test_iterator_continue(self, client, fake_qb_session: FakeQBSession):
         """A real iteratorID must produce iterator='Continue' + iteratorID attr."""
-        fake_qb_session.response_xml = ACCOUNT_LIST_ITERATOR_RESPONSE
+        fake_qb_session.response_xml = CUSTOMER_LIST_ITERATOR_RESPONSE
         resp = await client.get(
-            "/api/v1/accounts?max_returned=10&iterator_id={iter-abc-123}"
+            "/api/v1/customers?max_returned=10&iterator_id={iter-abc-123}"
         )
         assert resp.status_code == 200
 
@@ -208,8 +213,8 @@ class TestIteratorPagination:
 
     async def test_iterator_response_includes_meta(self, client, fake_qb_session: FakeQBSession):
         """Response meta must include iterator_id and remaining count."""
-        fake_qb_session.response_xml = ACCOUNT_LIST_ITERATOR_RESPONSE
-        resp = await client.get("/api/v1/accounts?max_returned=10&iterator_id=Start")
+        fake_qb_session.response_xml = CUSTOMER_LIST_ITERATOR_RESPONSE
+        resp = await client.get("/api/v1/customers?max_returned=10&iterator_id=Start")
         data = resp.json()
 
         assert data["meta"]["iterator_id"] == "{iter-abc-123}"
@@ -224,6 +229,26 @@ class TestIteratorPagination:
         rq = fake_qb_session.find_request_element()
         assert rq.get("iterator") is None
         assert rq.get("iteratorID") is None
+
+    async def test_iterator_rejected_for_unsupported_entity(
+        self, client, fake_qb_session: FakeQBSession
+    ):
+        """Account does not support iterators — should return 400, not an XML error."""
+        resp = await client.get("/api/v1/accounts?max_returned=10&iterator_id=Start")
+        assert resp.status_code == 400
+        data = resp.json()
+        assert data["detail"]["error"]["code"] == "ITERATOR_NOT_SUPPORTED"
+        assert "Account" in data["detail"]["error"]["message"]
+
+    async def test_iterator_on_transaction_entity(self, client, fake_qb_session: FakeQBSession):
+        """Transaction entities like Invoice support iterators."""
+        fake_qb_session.response_xml = CUSTOMER_LIST_ITERATOR_RESPONSE
+        resp = await client.get("/api/v1/invoices?max_returned=10&iterator_id=Start")
+        assert resp.status_code == 200
+
+        rq = fake_qb_session.find_request_element()
+        assert rq.tag == "InvoiceQueryRq"
+        assert rq.get("iterator") == "Start"
 
 
 # ---------------------------------------------------------------------------

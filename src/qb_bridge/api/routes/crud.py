@@ -29,6 +29,7 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
     ent_name = entity.name
     ent_id_field = entity.id_field
     ent_is_txn = entity.is_transaction
+    ent_supports_iterator = entity.supports_iterator
     safe_path = entity.rest_path.replace("-", "_").replace("/", "_")
 
     # ----- LIST -----
@@ -58,6 +59,20 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
             iterator = None
             iter_id = None
             if iterator_id:
+                if not ent_supports_iterator:
+                    raise HTTPException(
+                        400,
+                        detail={
+                            "ok": False,
+                            "error": {
+                                "code": "ITERATOR_NOT_SUPPORTED",
+                                "message": (
+                                    f"{ent_name} does not support iterator pagination. "
+                                    f"Use max_returned to limit results instead."
+                                ),
+                            },
+                        },
+                    )
                 if iterator_id.lower() == "start":
                     iterator = "Start"
                 else:

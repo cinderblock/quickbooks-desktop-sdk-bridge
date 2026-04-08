@@ -121,6 +121,19 @@ ACCOUNT_LIST_ITERATOR_RESPONSE = """<?xml version="1.0" ?>
 </QBXMLMsgsRs>
 </QBXML>"""
 
+CUSTOMER_LIST_ITERATOR_RESPONSE = """<?xml version="1.0" ?>
+<QBXML>
+<QBXMLMsgsRs>
+<CustomerQueryRs requestID="1" statusCode="0" statusSeverity="Info" statusMessage="Status OK"
+    iteratorID="{iter-abc-123}" iteratorRemainingCount="42">
+    <CustomerRet>
+        <ListID>80000001-1611594109</ListID>
+        <Name>Acme Corp</Name>
+    </CustomerRet>
+</CustomerQueryRs>
+</QBXMLMsgsRs>
+</QBXML>"""
+
 CHECK_DETAIL_RESPONSE = """<?xml version="1.0" ?>
 <QBXML>
 <QBXMLMsgsRs>
