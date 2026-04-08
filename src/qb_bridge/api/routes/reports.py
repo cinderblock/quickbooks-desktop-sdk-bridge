@@ -141,22 +141,26 @@ async def get_report(
 
     category, qb_report_type, display_name = REPORT_DEFS[report_slug]
 
-    # Build qbXML body
-    body: dict = {"ReportType": qb_report_type}
+    # Build qbXML body — element name and order must match the DTD.
+    # The report-type element name is derived from the request type:
+    #   "GeneralSummaryReportQueryRq" → "GeneralSummaryReportType"
+    report_type_element = category.value.replace("QueryRq", "Type")
+    body: dict = {report_type_element: qb_report_type}
 
     if date_macro:
         body["ReportDateMacro"] = date_macro
-    else:
-        if from_date:
-            body["ReportPeriod"] = {"FromReportDate": from_date}
-            if to_date:
-                body["ReportPeriod"]["ToReportDate"] = to_date
+    elif from_date:
+        period: dict = {"FromReportDate": from_date}
+        if to_date:
+            period["ToReportDate"] = to_date
+        body["ReportPeriod"] = period
+
+    # SummarizeColumnsBy must precede ReportBasis in the DTD
+    if summarize_by:
+        body["SummarizeColumnsBy"] = summarize_by
 
     if basis:
         body["ReportBasis"] = basis
-
-    if summarize_by:
-        body["SummarizeColumnsBy"] = summarize_by
 
     report_data = await run_report(session, request_type=category.value, body=body)
 

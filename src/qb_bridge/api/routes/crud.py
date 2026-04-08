@@ -54,30 +54,36 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
         ):
             filters: dict = {}
 
-            if name:
-                if ent_is_txn:
-                    filters["RefNumber"] = name
-                else:
-                    filters["NameFilter"] = {"MatchCriterion": "Contains", "Name": name}
-
-            if active != "ActiveOnly":
-                filters["ActiveStatus"] = active
-
-            if modified_after:
-                filters["FromModifiedDate"] = modified_after
-
+            # Determine iterator mode
             iterator = None
+            iter_id = None
             if iterator_id:
-                iterator = "Continue"
-            else:
-                if max_returned > 0:
-                    filters["MaxReturned"] = str(max_returned)
+                if iterator_id.lower() == "start":
+                    iterator = "Start"
+                else:
+                    iterator = "Continue"
+                    iter_id = iterator_id
+
+            # Only apply filters for new queries (not iterator Continue)
+            if iterator != "Continue":
+                if name:
+                    if ent_is_txn:
+                        filters["RefNumber"] = name
+                    else:
+                        filters["NameFilter"] = {"MatchCriterion": "Contains", "Name": name}
+
+                if active != "ActiveOnly":
+                    filters["ActiveStatus"] = active
+
+                if modified_after:
+                    filters["FromModifiedDate"] = modified_after
 
             request_xml = xml_builder.query(
                 ent_name,
                 filters=filters,
-                iterator="Start" if not iterator_id and max_returned >= 100 else iterator,
-                iterator_id=iterator_id,
+                max_returned=max_returned,
+                iterator=iterator,
+                iterator_id=iter_id,
             )
             response_xml = await session.execute(request_xml)
             resp = xml_parser.parse_response(response_xml)
@@ -107,7 +113,11 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
             _perm=Depends(require_permission(ent_name, "get")),
         ):
             filters = {ent_id_field: entity_id}
-            request_xml = xml_builder.query(ent_name, filters=filters)
+            request_xml = xml_builder.query(
+                ent_name,
+                filters=filters,
+                include_line_items=ent_is_txn,
+            )
             response_xml = await session.execute(request_xml)
             item = xml_parser.parse_single_entity(response_xml, ent_name)
             if item is None:

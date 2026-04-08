@@ -93,6 +93,101 @@ class TestQueryBuilder:
         assert rq.find("ActiveStatus").text == "All"
         assert rq.find("MaxReturned").text == "50"
 
+    # --- Bug 1: max_returned >= 100 should NOT force an iterator -----------
+    def test_max_returned_100_no_iterator(self):
+        """max_returned=100 must produce a plain query (no iterator attr)."""
+        xml = xml_builder.query("Account", max_returned=100)
+        root = _parse(xml)
+        rq = root.find(".//AccountQueryRq")
+        assert rq.find("MaxReturned").text == "100"
+        assert rq.get("iterator") is None
+        assert rq.get("iteratorID") is None
+
+    def test_max_returned_5000_no_iterator(self):
+        """Even very large page sizes must not trigger an iterator."""
+        xml = xml_builder.query("Customer", max_returned=5000)
+        root = _parse(xml)
+        rq = root.find(".//CustomerQueryRq")
+        assert rq.find("MaxReturned").text == "5000"
+        assert rq.get("iterator") is None
+
+    # --- Bug 2: element ordering must match qbXML DTD ----------------------
+    def test_max_returned_before_filters(self):
+        """MaxReturned must precede filter elements in the XML output."""
+        xml = xml_builder.query(
+            "Account",
+            filters={
+                "NameFilter": {"MatchCriterion": "Contains", "Name": "Rent"},
+                "ActiveStatus": "All",
+                "FromModifiedDate": "2021-01-01T00:00:00",
+            },
+            max_returned=10,
+        )
+        root = _parse(xml)
+        rq = root.find(".//AccountQueryRq")
+        tags = [child.tag for child in rq]
+        assert tags.index("MaxReturned") < tags.index("ActiveStatus")
+        assert tags.index("MaxReturned") < tags.index("FromModifiedDate")
+        assert tags.index("MaxReturned") < tags.index("NameFilter")
+        assert tags.index("ActiveStatus") < tags.index("FromModifiedDate")
+        assert tags.index("FromModifiedDate") < tags.index("NameFilter")
+
+    def test_name_filter_structure(self):
+        """NameFilter must contain MatchCriterion + Name children."""
+        xml = xml_builder.query(
+            "Account",
+            filters={"NameFilter": {"MatchCriterion": "Contains", "Name": "Rent"}},
+            max_returned=10,
+        )
+        root = _parse(xml)
+        nf = root.find(".//NameFilter")
+        assert nf is not None
+        assert nf.find("MatchCriterion").text == "Contains"
+        assert nf.find("Name").text == "Rent"
+
+    # --- Bug 3: iterator attributes ----------------------------------------
+    def test_iterator_start(self):
+        """iterator='Start' should set the XML attribute, not a child."""
+        xml = xml_builder.query("Account", max_returned=10, iterator="Start")
+        root = _parse(xml)
+        rq = root.find(".//AccountQueryRq")
+        assert rq.get("iterator") == "Start"
+        assert rq.get("iteratorID") is None
+        assert rq.find("MaxReturned").text == "10"
+
+    def test_iterator_continue(self):
+        """iterator='Continue' needs both the iterator and iteratorID attrs."""
+        xml = xml_builder.query(
+            "Account",
+            max_returned=10,
+            iterator="Continue",
+            iterator_id="{abc-123}",
+        )
+        root = _parse(xml)
+        rq = root.find(".//AccountQueryRq")
+        assert rq.get("iterator") == "Continue"
+        assert rq.get("iteratorID") == "{abc-123}"
+
+    # --- Bug 5: IncludeLineItems -------------------------------------------
+    def test_include_line_items(self):
+        """Transaction get-by-ID must include IncludeLineItems element."""
+        xml = xml_builder.query(
+            "Check",
+            filters={"TxnID": "85-1613406293"},
+            include_line_items=True,
+        )
+        root = _parse(xml)
+        rq = root.find(".//CheckQueryRq")
+        assert rq.find("IncludeLineItems").text == "true"
+        # IncludeLineItems must come after TxnID in DTD order
+        tags = [child.tag for child in rq]
+        assert tags.index("TxnID") < tags.index("IncludeLineItems")
+
+    def test_no_include_line_items_by_default(self):
+        """List entities should NOT include IncludeLineItems."""
+        xml = xml_builder.query("Account", max_returned=50)
+        assert "IncludeLineItems" not in xml
+
 
 class TestAddBuilder:
     def test_add(self):
@@ -119,6 +214,74 @@ class TestModBuilder:
         assert mod_elem.find("ListID").text == "ABC-123"
         assert mod_elem.find("EditSequence").text == "999"
         assert mod_elem.find("Name").text == "Updated Co"
+
+
+class TestReportBuilder:
+    """Bug 4 — report XML must use category-specific element names."""
+
+    def test_general_summary_report_type_element(self):
+        """GeneralSummaryReportQueryRq must use <GeneralSummaryReportType>."""
+        xml = xml_builder.report(
+            "GeneralSummaryReportQueryRq",
+            "ProfitAndLossStandard",
+        )
+        root = _parse(xml)
+        rq = root.find(".//GeneralSummaryReportQueryRq")
+        assert rq is not None
+        assert rq.find("GeneralSummaryReportType").text == "ProfitAndLossStandard"
+        # Must NOT have a generic <ReportType> element
+        assert rq.find("ReportType") is None
+
+    def test_general_detail_report_type_element(self):
+        xml = xml_builder.report(
+            "GeneralDetailReportQueryRq",
+            "GeneralLedger",
+        )
+        root = _parse(xml)
+        rq = root.find(".//GeneralDetailReportQueryRq")
+        assert rq.find("GeneralDetailReportType").text == "GeneralLedger"
+
+    def test_aging_report_type_element(self):
+        xml = xml_builder.report("AgingReportQueryRq", "ARAgingSummary")
+        root = _parse(xml)
+        rq = root.find(".//AgingReportQueryRq")
+        assert rq.find("AgingReportType").text == "ARAgingSummary"
+
+    def test_report_basis_after_summarize(self):
+        """ReportBasis must come after SummarizeColumnsBy in the DTD."""
+        xml = xml_builder.report(
+            "GeneralSummaryReportQueryRq",
+            "ProfitAndLossStandard",
+            basis="Accrual",
+            summarize_by="Month",
+        )
+        root = _parse(xml)
+        rq = root.find(".//GeneralSummaryReportQueryRq")
+        tags = [child.tag for child in rq]
+        assert tags.index("SummarizeColumnsBy") < tags.index("ReportBasis")
+
+    def test_report_with_date_macro(self):
+        xml = xml_builder.report(
+            "GeneralSummaryReportQueryRq",
+            "BalanceSheetStandard",
+            date_macro="ThisFiscalYear",
+        )
+        root = _parse(xml)
+        rq = root.find(".//GeneralSummaryReportQueryRq")
+        assert rq.find("ReportDateMacro").text == "ThisFiscalYear"
+
+    def test_report_with_date_range(self):
+        xml = xml_builder.report(
+            "GeneralDetailReportQueryRq",
+            "GeneralLedger",
+            from_date="2024-01-01",
+            to_date="2024-12-31",
+        )
+        root = _parse(xml)
+        period = root.find(".//ReportPeriod")
+        assert period is not None
+        assert period.find("FromReportDate").text == "2024-01-01"
+        assert period.find("ToReportDate").text == "2024-12-31"
 
 
 class TestDeleteBuilder:

@@ -14,6 +14,51 @@ QBXML_VERSION = "13.0"
 
 QBXML_PROLOG = f'<?xml version="1.0" encoding="utf-8"?>\n<?qbxml version="{QBXML_VERSION}"?>\n'
 
+# qbXML validates element order against its DTD.  Elements that appear out
+# of order cause the infamous "error when parsing the provided XML text
+# stream" message.  The tuple below defines the canonical ordering for the
+# elements commonly used inside ``<*QueryRq>`` requests.  Any keys that do
+# not appear here are appended in their original dict order.
+_QUERY_ELEMENT_ORDER = (
+    # ID look-ups (list entities)
+    "ListID", "FullName",
+    # ID look-ups (transaction entities)
+    "TxnID", "RefNumber", "RefNumberCaseSensitive",
+    # Page size — must precede all filter elements
+    "MaxReturned",
+    # List-entity filters
+    "ActiveStatus",
+    "FromModifiedDate", "ToModifiedDate",
+    "NameFilter", "NameRangeFilter",
+    # Transaction filters
+    "ModifiedDateRangeFilter", "TxnDateRangeFilter",
+    "EntityFilter", "AccountFilter",
+    "RefNumberFilter", "RefNumberRangeFilter",
+    "CurrencyFilter", "PaidStatus",
+    # Entity-specific
+    "AccountType",
+    # Include options
+    "IncludeLineItems", "IncludeLinkedTxns",
+    "IncludeRetElement",
+    "OwnerID",
+)
+
+
+def _order_query_body(body: dict) -> dict:
+    """Return *body* re-keyed so elements match qbXML DTD order.
+
+    Any keys not present in ``_QUERY_ELEMENT_ORDER`` are appended at
+    the end in their original insertion order.
+    """
+    ordered: dict = {}
+    for key in _QUERY_ELEMENT_ORDER:
+        if key in body:
+            ordered[key] = body[key]
+    for key, value in body.items():
+        if key not in ordered:
+            ordered[key] = value
+    return ordered
+
 
 def _dict_to_xml(parent: etree._Element, data: dict | list | str) -> None:
     """Recursively convert a nested dict/list/str into XML child elements."""
@@ -67,6 +112,7 @@ def query(
     *,
     filters: dict | None = None,
     max_returned: int | None = None,
+    include_line_items: bool = False,
     include_ret_elements: list[str] | None = None,
     iterator: str | None = None,
     iterator_id: str | None = None,
@@ -77,6 +123,7 @@ def query(
         entity: e.g. ``"Customer"``, ``"Invoice"``, ``"Account"``
         filters: Dict of filter elements (``NameFilter``, ``ActiveStatus``, etc.)
         max_returned: Limit results.
+        include_line_items: Add ``<IncludeLineItems>`` for transaction queries.
         include_ret_elements: List of field names to include in response.
         iterator: ``"Start"`` or ``"Continue"``
         iterator_id: Required when ``iterator="Continue"``
@@ -89,9 +136,15 @@ def query(
     if max_returned is not None:
         body["MaxReturned"] = str(max_returned)
 
+    if include_line_items:
+        body["IncludeLineItems"] = "true"
+
     if include_ret_elements:
         # IncludeRetElement appears multiple times — use a list
         body["IncludeRetElement"] = include_ret_elements
+
+    # Re-order to satisfy the qbXML DTD (MaxReturned before filters, etc.)
+    body = _order_query_body(body)
 
     rq_type = f"{entity}QueryRq"
     attrs = {}
@@ -100,7 +153,7 @@ def query(
     if iterator_id:
         attrs["iteratorID"] = iterator_id
 
-    # For iterator attrs we need to build manually
+    # Iterator attributes live on the element, not as children
     if attrs:
         root = etree.Element("QBXML")
         msgs = etree.SubElement(root, "QBXMLMsgsRq", onError="stopOnError")
@@ -159,6 +212,7 @@ def delete(
 
 def report(
     report_type: str,
+    report_name: str,
     *,
     from_date: str | None = None,
     to_date: str | None = None,
@@ -171,26 +225,32 @@ def report(
     Args:
         report_type: e.g. ``"GeneralSummaryReportQueryRq"``,
                      ``"GeneralDetailReportQueryRq"``
+        report_name: e.g. ``"ProfitAndLossStandard"``, ``"BalanceSheetStandard"``
         from_date: ISO date ``YYYY-MM-DD``
         to_date: ISO date ``YYYY-MM-DD``
         date_macro: e.g. ``"ThisMonth"``, ``"ThisFiscalYear"``
         basis: ``"Accrual"`` or ``"Cash"``
         summarize_by: e.g. ``"Month"``, ``"TotalOnly"``
     """
-    body: dict = {}
+    # The DTD element name is derived from the request type:
+    #   "GeneralSummaryReportQueryRq" → "GeneralSummaryReportType"
+    type_element = report_type.replace("QueryRq", "Type")
+
+    body: dict = {type_element: report_name}
 
     if date_macro:
         body["ReportDateMacro"] = date_macro
-    else:
-        if from_date:
-            body["ReportPeriod"] = {"FromReportDate": from_date}
-            if to_date:
-                body["ReportPeriod"]["ToReportDate"] = to_date
+    elif from_date:
+        period: dict = {"FromReportDate": from_date}
+        if to_date:
+            period["ToReportDate"] = to_date
+        body["ReportPeriod"] = period
+
+    # SummarizeColumnsBy must precede ReportBasis in the DTD
+    if summarize_by:
+        body["SummarizeColumnsBy"] = summarize_by
 
     if basis:
         body["ReportBasis"] = basis
-
-    if summarize_by:
-        body["SummarizeColumnsBy"] = summarize_by
 
     return build_request(report_type, body)
