@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     company_file: str = ""  # empty = use whatever QB has open
     qb_exe_path: str = r"C:\Program Files (x86)\Intuit\QuickBooks 2021\QBW32Pro.exe"
     idle_timeout: int = 600  # seconds
-    auto_launch_qb: bool = True
+    auto_launch_qb: bool = False
     auto_close_qb: bool = False
     request_timeout: float = 60.0
 
