@@ -153,29 +153,18 @@ class QBSessionManager:
             if self.idle_seconds < self.idle_timeout:
                 continue
 
-            # We've been idle long enough — disconnect
+            # We've been idle long enough — kill the worker subprocess so
+            # the OS reclaims all COM handles and releases the QB company
+            # file lock.  The worker will be re-spawned on the next request.
             log.info(
-                "QB session idle for %.0fs (threshold %ds), disconnecting",
+                "QB session idle for %.0fs (threshold %ds), stopping worker",
                 self.idle_seconds,
                 self.idle_timeout,
             )
             async with self._lock:
-                if self._proc and self._proc.poll() is None:
-                    try:
-                        self._proc.stdin.write(json.dumps({"cmd": "disconnect"}) + "\n")
-                        self._proc.stdin.flush()
-                        # Drain the ack so stdout doesn't block on the next execute
-                        await asyncio.wait_for(
-                            asyncio.get_running_loop().run_in_executor(
-                                None, self._proc.stdout.readline
-                            ),
-                            timeout=10.0,
-                        )
-                        self._connection_state = "disconnected"
-                        self._last_activity = 0.0  # Reset so we don't fire again immediately
-                        log.info("QB session disconnected due to idle timeout")
-                    except Exception as exc:
-                        log.warning("Idle disconnect failed: %s", exc)
+                await self._kill_worker()
+                self._last_activity = 0.0
+                log.info("QB worker stopped due to idle timeout — company file released")
 
             if self.auto_close_qb:
                 from .process import close_qb
