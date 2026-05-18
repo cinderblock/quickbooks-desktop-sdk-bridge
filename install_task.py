@@ -5,7 +5,6 @@ Run from an Admin command prompt:
 
 from __future__ import annotations
 
-import getpass
 import os
 import subprocess
 import sys
@@ -25,7 +24,6 @@ print()
 username = input(f"  Windows username [{os.environ.get('USERNAME', '')}]: ").strip()
 if not username:
     username = os.environ.get("USERNAME", "")
-password = getpass.getpass("  Windows password: ")
 
 # --- Cleanup old installations ---
 print()
@@ -60,6 +58,7 @@ xml = f"""<?xml version="1.0" encoding="UTF-16"?>
     <LogonTrigger>
       <Enabled>true</Enabled>
       <UserId>{username}</UserId>
+      <Delay>PT10M</Delay>
     </LogonTrigger>
   </Triggers>
   <Principals>
@@ -99,7 +98,7 @@ with open(xml_path, "w", encoding="utf-16") as f:
 
 result = subprocess.run(
     ["schtasks", "/Create", "/TN", "QBBridge", "/XML", xml_path,
-     "/RU", username, "/RP", password, "/F"],
+     "/RU", username, "/F"],
     capture_output=True, text=True,
 )
 os.remove(xml_path)
