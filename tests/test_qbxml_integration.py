@@ -152,16 +152,111 @@ class TestFilterQueryParameters:
             "ActiveStatus=ActiveOnly should be omitted (it's the default)"
         )
 
-    async def test_transaction_name_uses_refnumber(self, client, fake_qb_session: FakeQBSession):
-        """For transaction entities, 'name' should map to RefNumber, not NameFilter."""
+    async def test_transaction_name_uses_refnumber_filter(self, client, fake_qb_session: FakeQBSession):
+        """For transaction entities, 'name' maps to RefNumberFilter (which can
+        coexist with MaxReturned), not a bare RefNumber (which cannot)."""
         fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE  # Good enough shape
         resp = await client.get("/api/v1/invoices?name=1001&max_returned=10")
         assert resp.status_code == 200
 
         rq = fake_qb_session.find_request_element()
         assert rq.tag == "InvoiceQueryRq"
-        assert rq.find("RefNumber").text == "1001"
+        assert rq.find("RefNumber") is None, (
+            "bare RefNumber conflicts with MaxReturned in the DTD"
+        )
+        nf = rq.find("RefNumberFilter")
+        assert nf is not None
+        assert nf.find("MatchCriterion").text == "Contains"
+        assert nf.find("RefNumber").text == "1001"
         assert rq.find("NameFilter") is None
+        # Both filter and page size present and correctly ordered
+        tags = [child.tag for child in rq]
+        assert tags.index("MaxReturned") < tags.index("RefNumberFilter")
+
+
+# ---------------------------------------------------------------------------
+# Bug 6 — Transaction filters must produce transaction-specific qbXML
+# (regression for the "list endpoints can't reach recent transactions" report)
+# ---------------------------------------------------------------------------
+
+
+class TestTransactionFilters:
+    """Transaction queries (Check, Bill, JournalEntry, ...) have a different
+    qbXML DTD from list queries. Filters must use the transaction variants or
+    QuickBooks rejects the whole request with a parse error (HTTP 502).
+    """
+
+    async def test_active_filter_ignored_for_transactions(
+        self, client, fake_qb_session: FakeQBSession
+    ):
+        """ActiveStatus does not exist on transaction queries — it must be
+        omitted (previously emitted it and caused a 502)."""
+        fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE
+        resp = await client.get("/api/v1/checks?active=All&max_returned=10")
+        assert resp.status_code == 200
+
+        rq = fake_qb_session.find_request_element()
+        assert rq.tag == "CheckQueryRq"
+        assert rq.find("ActiveStatus") is None, (
+            "transaction queries must not emit ActiveStatus"
+        )
+
+    async def test_modified_after_uses_range_filter_for_transactions(
+        self, client, fake_qb_session: FakeQBSession
+    ):
+        """modified_after must be wrapped in ModifiedDateRangeFilter for txns,
+        not emitted as a bare FromModifiedDate."""
+        fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE
+        resp = await client.get(
+            "/api/v1/checks?modified_after=2026-01-01T00:00:00&max_returned=10"
+        )
+        assert resp.status_code == 200
+
+        rq = fake_qb_session.find_request_element()
+        assert rq.find("FromModifiedDate") is None, "bare FromModifiedDate is invalid for txns"
+        mrf = rq.find("ModifiedDateRangeFilter")
+        assert mrf is not None
+        assert mrf.find("FromModifiedDate").text == "2026-01-01T00:00:00"
+
+    async def test_txn_date_range_filter(self, client, fake_qb_session: FakeQBSession):
+        """from_date/to_date must produce a TxnDateRangeFilter so recent
+        transactions are reachable."""
+        fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE
+        resp = await client.get(
+            "/api/v1/checks?from_date=2026-01-01&to_date=2026-12-31&max_returned=10"
+        )
+        assert resp.status_code == 200
+
+        rq = fake_qb_session.find_request_element()
+        tdr = rq.find("TxnDateRangeFilter")
+        assert tdr is not None
+        assert tdr.find("FromTxnDate").text == "2026-01-01"
+        assert tdr.find("ToTxnDate").text == "2026-12-31"
+        # DTD order: MaxReturned must precede the range filter
+        tags = [child.tag for child in rq]
+        assert tags.index("MaxReturned") < tags.index("TxnDateRangeFilter")
+
+    async def test_txn_date_from_only(self, client, fake_qb_session: FakeQBSession):
+        """Only from_date supplied — ToTxnDate must be absent."""
+        fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE
+        resp = await client.get("/api/v1/checks?from_date=2026-01-01&max_returned=10")
+        assert resp.status_code == 200
+
+        rq = fake_qb_session.find_request_element()
+        tdr = rq.find("TxnDateRangeFilter")
+        assert tdr.find("FromTxnDate").text == "2026-01-01"
+        assert tdr.find("ToTxnDate") is None
+
+    async def test_date_params_ignored_for_list_entities(
+        self, client, fake_qb_session: FakeQBSession
+    ):
+        """List entities have no TxnDate — from_date/to_date must be ignored."""
+        fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE
+        resp = await client.get("/api/v1/accounts?from_date=2026-01-01&max_returned=10")
+        assert resp.status_code == 200
+
+        rq = fake_qb_session.find_request_element()
+        assert rq.find("TxnDateRangeFilter") is None
 
 
 # ---------------------------------------------------------------------------

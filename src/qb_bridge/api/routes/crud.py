@@ -46,12 +46,29 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
             key: dict = Depends(require_api_key),
             _perm=Depends(require_permission(ent_name, "list")),
             name: str | None = Query(None, description="Filter by name (contains)"),
-            active: str = Query("ActiveOnly", description="ActiveOnly | InactiveOnly | All"),
+            active: str = Query(
+                "ActiveOnly",
+                description="ActiveOnly | InactiveOnly | All (list entities only; ignored for transactions)",
+            ),
             modified_after: str | None = Query(
                 None, description="ISO datetime, e.g. 2024-01-01T00:00:00"
             ),
+            from_date: str | None = Query(
+                None, description="TxnDate >= this date, e.g. 2026-01-01 (transactions only)"
+            ),
+            to_date: str | None = Query(
+                None, description="TxnDate <= this date, e.g. 2026-12-31 (transactions only)"
+            ),
             max_returned: int = Query(100, ge=1, le=5000, description="Max results to return"),
-            iterator_id: str | None = Query(None, description="Continue a previous iterator"),
+            iterator_id: str | None = Query(
+                None,
+                description=(
+                    "Pagination cursor. Pass 'Start' to begin an iterator, then pass the "
+                    "meta.iterator_id from each response to fetch the next page. This is the "
+                    "only way to reach records beyond max_returned for entities with more than "
+                    "max_returned rows."
+                ),
+            ),
         ):
             filters: dict = {}
 
@@ -79,19 +96,42 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
                     iterator = "Continue"
                     iter_id = iterator_id
 
-            # Only apply filters for new queries (not iterator Continue)
+            # Only apply filters for new queries (not iterator Continue).
+            # Transaction queries and list queries have different qbXML DTDs,
+            # so the same logical filter maps to different elements.
             if iterator != "Continue":
                 if name:
                     if ent_is_txn:
-                        filters["RefNumber"] = name
+                        # RefNumberFilter lives in the same DTD branch as
+                        # MaxReturned. A bare <RefNumber> is in a mutually
+                        # exclusive branch and would invalidate the query.
+                        filters["RefNumberFilter"] = {
+                            "MatchCriterion": "Contains",
+                            "RefNumber": name,
+                        }
                     else:
                         filters["NameFilter"] = {"MatchCriterion": "Contains", "Name": name}
 
-                if active != "ActiveOnly":
+                # Transaction queries have no ActiveStatus element in the DTD.
+                if active != "ActiveOnly" and not ent_is_txn:
                     filters["ActiveStatus"] = active
 
                 if modified_after:
-                    filters["FromModifiedDate"] = modified_after
+                    if ent_is_txn:
+                        filters["ModifiedDateRangeFilter"] = {
+                            "FromModifiedDate": modified_after
+                        }
+                    else:
+                        filters["FromModifiedDate"] = modified_after
+
+                # TxnDate range filter — transactions only.
+                if ent_is_txn and (from_date or to_date):
+                    txn_range: dict = {}
+                    if from_date:
+                        txn_range["FromTxnDate"] = from_date
+                    if to_date:
+                        txn_range["ToTxnDate"] = to_date
+                    filters["TxnDateRangeFilter"] = txn_range
 
             request_xml = xml_builder.query(
                 ent_name,
