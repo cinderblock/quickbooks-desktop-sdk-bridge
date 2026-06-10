@@ -46,6 +46,13 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
             key: dict = Depends(require_api_key),
             _perm=Depends(require_permission(ent_name, "list")),
             name: str | None = Query(None, description="Filter by name (contains)"),
+            entity_name: str | None = Query(
+                None,
+                description=(
+                    "Filter transactions by customer/job/vendor name (contains match, "
+                    "e.g. a job name). Transactions only."
+                ),
+            ),
             active: str = Query(
                 "ActiveOnly",
                 description="ActiveOnly | InactiveOnly | All (list entities only; ignored for transactions)",
@@ -123,6 +130,12 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
                         }
                     else:
                         filters["FromModifiedDate"] = modified_after
+
+                # Filter transactions by the associated customer/job/vendor.
+                # FullNameWithChildren matches the named entity *and* its
+                # sub-entities, so a customer name also catches all its jobs.
+                if entity_name and ent_is_txn:
+                    filters["EntityFilter"] = {"FullNameWithChildren": entity_name}
 
                 # TxnDate range filter — transactions only.
                 if ent_is_txn and (from_date or to_date):

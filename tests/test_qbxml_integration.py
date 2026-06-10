@@ -258,6 +258,38 @@ class TestTransactionFilters:
         rq = fake_qb_session.find_request_element()
         assert rq.find("TxnDateRangeFilter") is None
 
+    async def test_entity_name_filter_for_transactions(
+        self, client, fake_qb_session: FakeQBSession
+    ):
+        """entity_name must produce an EntityFilter using FullNameWithChildren,
+        so a customer name also matches all of that customer's jobs. (A nested
+        NameFilter is rejected by QuickBooks for transaction queries.)"""
+        fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE
+        resp = await client.get(
+            "/api/v1/checks?entity_name=Acme Plumbing Services (AP)&max_returned=10"
+        )
+        assert resp.status_code == 200
+
+        rq = fake_qb_session.find_request_element()
+        ef = rq.find("EntityFilter")
+        assert ef is not None
+        assert ef.find("FullNameWithChildren").text == "Acme Plumbing Services (AP)"
+        assert ef.find("NameFilter") is None
+        # DTD order: MaxReturned precedes EntityFilter
+        tags = [child.tag for child in rq]
+        assert tags.index("MaxReturned") < tags.index("EntityFilter")
+
+    async def test_entity_name_ignored_for_list_entities(
+        self, client, fake_qb_session: FakeQBSession
+    ):
+        """List entities have no EntityFilter — entity_name must be ignored."""
+        fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE
+        resp = await client.get("/api/v1/customers?entity_name=Acme&max_returned=10")
+        assert resp.status_code == 200
+
+        rq = fake_qb_session.find_request_element()
+        assert rq.find("EntityFilter") is None
+
 
 # ---------------------------------------------------------------------------
 # Bug 3 — Iterator pagination (Start / Continue / iteratorID)

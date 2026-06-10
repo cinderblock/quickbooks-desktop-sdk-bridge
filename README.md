@@ -50,23 +50,38 @@ Every QuickBooks entity gets a full set of REST endpoints:
 | Parameter | Description | Example |
 |-----------|-------------|---------|
 | `max_returned` | Limit results (1-5000, default 100) | `?max_returned=50` |
-| `name` | Filter by name (contains match) | `?name=Acme` |
-| `active` | Filter by status: `ActiveOnly`, `InactiveOnly`, `All` | `?active=All` |
-| `modified_after` | Only entities modified after this datetime | `?modified_after=2024-01-01T00:00:00` |
-| `iterator_id` | Paginate through large result sets | `?iterator_id=Start` |
+| `name` | Filter by name. List entities: contains match on the entity name. Transactions: contains match on RefNumber | `?name=Acme` |
+| `active` | Filter by status: `ActiveOnly`, `InactiveOnly`, `All`. **List entities only** — ignored for transactions (they have no active status) | `?active=All` |
+| `modified_after` | Only records modified after this datetime | `?modified_after=2024-01-01T00:00:00` |
+| `from_date` / `to_date` | **Transactions only.** Filter by `TxnDate` range (YYYY-MM-DD) | `?from_date=2026-01-01&to_date=2026-12-31` |
+| `entity_name` | **Transactions only.** Filter by the transaction's customer/job/vendor, including sub-jobs. Exact `FullName` (as returned by `/customers` or `/vendors`) | `?entity_name=Acme Corp:Phase 1` |
+| `iterator_id` | Paginate through large result sets — see below | `?iterator_id=Start` |
+
+> **Transactions are returned oldest-first** and there is no newest-first option in qbXML. To reach recent records in a table with more than `max_returned` rows, use `from_date`/`to_date` to window by date, or use `iterator_id` to page through all of them.
+
+#### Filtering by job — important limitation
+
+`entity_name` matches a transaction's **top-level** entity:
+- For customer-facing transactions (invoices, estimates, sales receipts, credit memos, payments) that's the **customer/job**, so `entity_name` works as expected.
+- For **checks and bills**, the top-level entity is the **payee (a vendor)**, *not* the job. The job linkage on costs lives at the **line-item level** (`CustomerRef` on each expense/item line), which qbXML transaction queries **cannot** filter on.
+
+So a query like "all costs charged to job X" (the classic job-costing question) cannot be answered by a transaction list query. Use a **report** instead — e.g. `general-ledger` or a job/customer report — or fetch the transactions and filter their line items client-side.
 
 ### Iterator pagination
 
-For entities with more results than `max_returned`, use iterators to page through them:
+When a table has more rows than `max_returned`, an iterator is the only way to
+reach the records past the first page. **Pass `iterator_id=Start` to begin** —
+a plain query (no `iterator_id`) returns only the first `max_returned` rows and
+no cursor, so the rest are unreachable.
 
 ```sh
-# Page 1 — pass iterator_id=Start
-curl "http://localhost:8743/api/v1/customers?max_returned=50&iterator_id=Start"
-# Response: {"data": [...], "meta": {"count": 50, "iterator_id": "{guid}", "remaining": 120}}
+# Page 1 — pass iterator_id=Start to open the cursor
+curl "http://localhost:8743/api/v1/checks?max_returned=50&iterator_id=Start"
+# Response: {"data": [...], "meta": {"count": 50, "iterator_id": "{guid}", "remaining": 5728}}
 
-# Page 2 — pass the iterator_id from the previous response
-curl "http://localhost:8743/api/v1/customers?max_returned=50&iterator_id={guid}"
-# Repeat until remaining is 0
+# Page 2+ — pass the iterator_id from the previous response
+curl "http://localhost:8743/api/v1/checks?max_returned=50&iterator_id={guid}"
+# Repeat until meta.remaining is 0
 ```
 
 Not all entities support iterators (it depends on the qbXML DTD). Entities that don't will return a `400 ITERATOR_NOT_SUPPORTED` error with a helpful message.
