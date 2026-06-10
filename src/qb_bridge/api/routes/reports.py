@@ -124,6 +124,15 @@ async def get_report(
         None,
         description="Date preset: ThisMonth, LastMonth, ThisQuarter, ThisYear, LastYear, etc.",
     ),
+    entity: str | None = Query(
+        None,
+        description=(
+            "Filter by customer/job/vendor, including sub-jobs. Exact FullName as "
+            "returned by /customers or /vendors, e.g. 'Acme Corp:Phase 1'. Use with "
+            "detail reports (profit-and-loss-detail, general-ledger) for job costing. "
+            "Reports that have no entity dimension (e.g. balance-sheet) will reject it."
+        ),
+    ),
     basis: Literal["Accrual", "Cash"] | None = Query(None, description="Accounting basis"),
     summarize_by: str | None = Query(
         None, description="Summarize columns by: Month, Quarter, Year, TotalOnly"
@@ -154,6 +163,12 @@ async def get_report(
         if to_date:
             period["ToReportDate"] = to_date
         body["ReportPeriod"] = period
+
+    # ReportEntityFilter follows the report period and precedes the summarize/
+    # basis elements in the DTD. FullNameWithChildren matches the named entity
+    # and all of its sub-jobs, so a customer name also covers its jobs.
+    if entity:
+        body["ReportEntityFilter"] = {"FullNameWithChildren": entity}
 
     # SummarizeColumnsBy must precede ReportBasis in the DTD
     if summarize_by:

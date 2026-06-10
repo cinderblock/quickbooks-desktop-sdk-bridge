@@ -65,7 +65,7 @@ Every QuickBooks entity gets a full set of REST endpoints:
 - For customer-facing transactions (invoices, estimates, sales receipts, credit memos, payments) that's the **customer/job**, so `entity_name` works as expected.
 - For **checks and bills**, the top-level entity is the **payee (a vendor)**, *not* the job. The job linkage on costs lives at the **line-item level** (`CustomerRef` on each expense/item line), which qbXML transaction queries **cannot** filter on.
 
-So a query like "all costs charged to job X" (the classic job-costing question) cannot be answered by a transaction list query. Use a **report** instead — e.g. `general-ledger` or a job/customer report — or fetch the transactions and filter their line items client-side.
+So a query like "all costs charged to job X" (the classic job-costing question) cannot be answered by a transaction list query. Use a **report** with the `entity` filter instead — see [Job costing](#reports) (e.g. `reports/profit-and-loss-detail?entity=...` or `reports/general-ledger?entity=...`).
 
 ### Iterator pagination
 
@@ -106,9 +106,25 @@ GET requests for transaction entities (invoices, bills, checks, etc.) automatica
 | `from_date` | Start date (YYYY-MM-DD) | `?from_date=2024-01-01` |
 | `to_date` | End date | `?to_date=2024-12-31` |
 | `date_macro` | Preset range | `?date_macro=ThisYear` |
+| `entity` | Scope to a customer/job/vendor, including sub-jobs. Exact `FullName` from `/customers` or `/vendors` | `?entity=Acme Corp:Phase 1` |
 | `basis` | `Accrual` or `Cash` | `?basis=Accrual` |
 | `summarize_by` | `Month`, `Quarter`, `Year`, `TotalOnly` | `?summarize_by=Month` |
 | `format` | `json` (default), `csv`, `pdf` | `?format=csv` |
+
+**Job costing:** the `entity` filter is how you answer "everything for job X" — including
+costs on checks/bills that a transaction list query can't reach (those are filtered by
+line-level `CustomerRef`, which only reports can see). Use it on a detail report:
+
+```sh
+# All income and expense detail for a job (and its sub-jobs)
+curl "http://localhost:8743/api/v1/reports/profit-and-loss-detail?entity=Acme Corp&from_date=2026-01-01&to_date=2026-12-31"
+
+# Every transaction touching the job (general ledger, filtered)
+curl "http://localhost:8743/api/v1/reports/general-ledger?entity=Acme Corp:Phase 1&from_date=2026-01-01&to_date=2026-12-31"
+```
+
+`entity` only applies to reports that have an entity dimension (detail reports, customer/income
+reports). Passing it to a report without one (e.g. `balance-sheet`) returns an error.
 
 ### Other endpoints
 

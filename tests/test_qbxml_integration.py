@@ -446,6 +446,35 @@ class TestReportEndpoints:
         assert period.find("FromReportDate").text == "2024-01-01"
         assert period.find("ToReportDate").text == "2024-12-31"
 
+    async def test_report_entity_filter(self, client, fake_qb_session: FakeQBSession):
+        """entity= must add a ReportEntityFilter (FullNameWithChildren) so
+        detail reports can be scoped to a customer/job, including sub-jobs."""
+        fake_qb_session.response_xml = REPORT_RESPONSE
+        resp = await client.get(
+            "/api/v1/reports/profit-and-loss-detail"
+            "?entity=Acme Plumbing Services (AP)&from_date=2026-01-01&to_date=2026-12-31"
+        )
+        assert resp.status_code == 200
+
+        rq = fake_qb_session.find_request_element()
+        ef = rq.find("ReportEntityFilter")
+        assert ef is not None
+        assert ef.find("FullNameWithChildren").text == "Acme Plumbing Services (AP)"
+        # DTD order: ReportPeriod precedes ReportEntityFilter
+        tags = [child.tag for child in rq]
+        assert tags.index("ReportPeriod") < tags.index("ReportEntityFilter")
+
+    async def test_report_no_entity_filter_by_default(
+        self, client, fake_qb_session: FakeQBSession
+    ):
+        """No entity param → no ReportEntityFilter element."""
+        fake_qb_session.response_xml = REPORT_RESPONSE
+        resp = await client.get("/api/v1/reports/profit-and-loss-detail")
+        assert resp.status_code == 200
+
+        rq = fake_qb_session.find_request_element()
+        assert rq.find("ReportEntityFilter") is None
+
     async def test_report_basis_after_summarize_by(self, client, fake_qb_session: FakeQBSession):
         """SummarizeColumnsBy must precede ReportBasis in the DTD."""
         fake_qb_session.response_xml = REPORT_RESPONSE
