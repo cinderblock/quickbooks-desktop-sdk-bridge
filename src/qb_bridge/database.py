@@ -77,7 +77,7 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
     # Migration: add permissions column if missing (existing DBs)
     try:
         await db.execute(
-            "ALTER TABLE api_keys ADD COLUMN permissions TEXT NOT NULL DEFAULT '{\"*\":[\"read\"]}'"
+            'ALTER TABLE api_keys ADD COLUMN permissions TEXT NOT NULL DEFAULT \'{"*":["read"]}\''
         )
         await db.commit()
         log.info("Migrated: added permissions column to api_keys (default: read-only)")
@@ -91,8 +91,8 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
     # Migration: convert existing admin keys to read-only
     # Keys that still have the old default get downgraded
     cursor = await db.execute(
-        "UPDATE api_keys SET permissions = '{\"*\":[\"read\"]}' "
-        "WHERE permissions = '{\"*\":[\"admin\"]}'"
+        'UPDATE api_keys SET permissions = \'{"*":["read"]}\' '
+        'WHERE permissions = \'{"*":["admin"]}\''
     )
     if cursor.rowcount:
         await db.commit()

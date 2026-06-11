@@ -21,24 +21,34 @@ QBXML_PROLOG = f'<?xml version="1.0" encoding="utf-8"?>\n<?qbxml version="{QBXML
 # not appear here are appended in their original dict order.
 _QUERY_ELEMENT_ORDER = (
     # ID look-ups (list entities)
-    "ListID", "FullName",
+    "ListID",
+    "FullName",
     # ID look-ups (transaction entities)
-    "TxnID", "RefNumber", "RefNumberCaseSensitive",
+    "TxnID",
+    "RefNumber",
+    "RefNumberCaseSensitive",
     # Page size — must precede all filter elements
     "MaxReturned",
     # List-entity filters
     "ActiveStatus",
-    "FromModifiedDate", "ToModifiedDate",
-    "NameFilter", "NameRangeFilter",
+    "FromModifiedDate",
+    "ToModifiedDate",
+    "NameFilter",
+    "NameRangeFilter",
     # Transaction filters
-    "ModifiedDateRangeFilter", "TxnDateRangeFilter",
-    "EntityFilter", "AccountFilter",
-    "RefNumberFilter", "RefNumberRangeFilter",
-    "CurrencyFilter", "PaidStatus",
+    "ModifiedDateRangeFilter",
+    "TxnDateRangeFilter",
+    "EntityFilter",
+    "AccountFilter",
+    "RefNumberFilter",
+    "RefNumberRangeFilter",
+    "CurrencyFilter",
+    "PaidStatus",
     # Entity-specific
     "AccountType",
     # Include options
-    "IncludeLineItems", "IncludeLinkedTxns",
+    "IncludeLineItems",
+    "IncludeLinkedTxns",
     "IncludeRetElement",
     "OwnerID",
 )

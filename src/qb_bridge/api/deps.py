@@ -41,7 +41,7 @@ async def require_api_key(
                 "ok": False,
                 "error": {
                     "code": "MISSING_API_KEY",
-                    "message": 'X-API-Key header is required. '
+                    "message": "X-API-Key header is required. "
                     'Generate one with: python -m qb_bridge.cli create-key "name"',
                 },
             },

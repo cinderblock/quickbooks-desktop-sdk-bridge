@@ -62,7 +62,7 @@ def _get_db() -> sqlite3.Connection:
     # Migration: add permissions column if missing (existing DBs)
     try:
         db.execute(
-            "ALTER TABLE api_keys ADD COLUMN permissions TEXT NOT NULL DEFAULT '{\"*\":[\"read\"]}'"
+            'ALTER TABLE api_keys ADD COLUMN permissions TEXT NOT NULL DEFAULT \'{"*":["read"]}\''
         )
         db.commit()
     except sqlite3.OperationalError:

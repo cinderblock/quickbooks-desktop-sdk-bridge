@@ -136,7 +136,9 @@ def close_qb(force: bool = False) -> bool:
         return False
 
     if result.returncode != 0:
-        log.warning("close_qb: Stop-Process exited %d: %s", result.returncode, result.stderr.strip())
+        log.warning(
+            "close_qb: Stop-Process exited %d: %s", result.returncode, result.stderr.strip()
+        )
 
     if is_qb_running():
         log.warning("close_qb: QuickBooks is still running after Stop-Process")

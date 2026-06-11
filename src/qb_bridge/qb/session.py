@@ -65,9 +65,7 @@ class QBSessionManager:
     async def start(self) -> None:
         self._running = True
         if self.idle_timeout > 0:
-            self._idle_task = asyncio.create_task(
-                self._idle_monitor(), name="qb-idle-monitor"
-            )
+            self._idle_task = asyncio.create_task(self._idle_monitor(), name="qb-idle-monitor")
         log.info("QBSessionManager started (idle_timeout=%ds)", self.idle_timeout)
 
     async def stop(self) -> None:

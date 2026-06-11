@@ -165,9 +165,7 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
 
                 if modified_after:
                     if ent_is_txn:
-                        filters["ModifiedDateRangeFilter"] = {
-                            "FromModifiedDate": modified_after
-                        }
+                        filters["ModifiedDateRangeFilter"] = {"FromModifiedDate": modified_after}
                     else:
                         filters["FromModifiedDate"] = modified_after
 

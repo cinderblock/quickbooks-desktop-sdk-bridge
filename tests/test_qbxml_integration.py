@@ -148,7 +148,9 @@ class TestFilterQueryParameters:
             "ActiveStatus=ActiveOnly should be omitted (it's the default)"
         )
 
-    async def test_transaction_name_uses_refnumber_filter(self, client, fake_qb_session: FakeQBSession):
+    async def test_transaction_name_uses_refnumber_filter(
+        self, client, fake_qb_session: FakeQBSession
+    ):
         """For transaction entities, 'name' maps to RefNumberFilter (which can
         coexist with MaxReturned), not a bare RefNumber (which cannot)."""
         fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE  # Good enough shape
@@ -157,9 +159,7 @@ class TestFilterQueryParameters:
 
         rq = fake_qb_session.find_request_element()
         assert rq.tag == "InvoiceQueryRq"
-        assert rq.find("RefNumber") is None, (
-            "bare RefNumber conflicts with MaxReturned in the DTD"
-        )
+        assert rq.find("RefNumber") is None, "bare RefNumber conflicts with MaxReturned in the DTD"
         nf = rq.find("RefNumberFilter")
         assert nf is not None
         assert nf.find("MatchCriterion").text == "Contains"
@@ -182,9 +182,7 @@ class TestTransactionFilters:
     QuickBooks rejects the whole request with a parse error (HTTP 502).
     """
 
-    async def test_active_rejected_for_transactions(
-        self, client, fake_qb_session: FakeQBSession
-    ):
+    async def test_active_rejected_for_transactions(self, client, fake_qb_session: FakeQBSession):
         """ActiveStatus does not exist on transaction queries. Rather than
         silently dropping the filter, the request must be rejected."""
         fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE
@@ -192,9 +190,7 @@ class TestTransactionFilters:
         assert resp.status_code == 400
         assert resp.json()["detail"]["error"]["code"] == "PARAM_NOT_APPLICABLE"
 
-    async def test_active_default_ok_for_transactions(
-        self, client, fake_qb_session: FakeQBSession
-    ):
+    async def test_active_default_ok_for_transactions(self, client, fake_qb_session: FakeQBSession):
         """Not sending 'active' at all must still work for transactions."""
         fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE
         resp = await client.get("/api/v1/checks?max_returned=10")
@@ -207,9 +203,7 @@ class TestTransactionFilters:
         """modified_after must be wrapped in ModifiedDateRangeFilter for txns,
         not emitted as a bare FromModifiedDate."""
         fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE
-        resp = await client.get(
-            "/api/v1/checks?modified_after=2026-01-01T00:00:00&max_returned=10"
-        )
+        resp = await client.get("/api/v1/checks?modified_after=2026-01-01T00:00:00&max_returned=10")
         assert resp.status_code == 200
 
         rq = fake_qb_session.find_request_element()
@@ -326,9 +320,7 @@ class TestIteratorPagination:
     async def test_iterator_continue(self, client, fake_qb_session: FakeQBSession):
         """A real iteratorID must produce iterator='Continue' + iteratorID attr."""
         fake_qb_session.response_xml = CUSTOMER_LIST_ITERATOR_RESPONSE
-        resp = await client.get(
-            "/api/v1/customers?max_returned=10&iterator_id={iter-abc-123}"
-        )
+        resp = await client.get("/api/v1/customers?max_returned=10&iterator_id={iter-abc-123}")
         assert resp.status_code == 200
 
         rq = fake_qb_session.find_request_element()
@@ -392,9 +384,7 @@ class TestUnknownQueryParams:
         assert body["error"]["code"] == "UNKNOWN_QUERY_PARAM"
         assert "sort" in body["error"]["message"]
 
-    async def test_reported_noop_params_now_rejected(
-        self, client, fake_qb_session: FakeQBSession
-    ):
+    async def test_reported_noop_params_now_rejected(self, client, fake_qb_session: FakeQBSession):
         """The exact params the bug report said were silently ignored."""
         fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE
         for bad in ("sort=x", "order=desc", "txn_date_from=2026-01-01", "from_date2=x"):
@@ -504,9 +494,7 @@ class TestReportEndpoints:
         tags = [child.tag for child in rq]
         assert tags.index("ReportPeriod") < tags.index("ReportEntityFilter")
 
-    async def test_report_no_entity_filter_by_default(
-        self, client, fake_qb_session: FakeQBSession
-    ):
+    async def test_report_no_entity_filter_by_default(self, client, fake_qb_session: FakeQBSession):
         """No entity param → no ReportEntityFilter element."""
         fake_qb_session.response_xml = REPORT_RESPONSE
         resp = await client.get("/api/v1/reports/profit-and-loss-detail")
@@ -518,9 +506,7 @@ class TestReportEndpoints:
     async def test_report_basis_after_summarize_by(self, client, fake_qb_session: FakeQBSession):
         """SummarizeColumnsBy must precede ReportBasis in the DTD."""
         fake_qb_session.response_xml = REPORT_RESPONSE
-        resp = await client.get(
-            "/api/v1/reports/profit-and-loss?basis=Accrual&summarize_by=Month"
-        )
+        resp = await client.get("/api/v1/reports/profit-and-loss?basis=Accrual&summarize_by=Month")
         assert resp.status_code == 200
 
         rq = fake_qb_session.find_request_element()
@@ -632,9 +618,7 @@ class TestBasicListEndpoint:
         assert data["data"][0]["Name"] == "Checking"
         assert data["meta"]["count"] == 2
 
-    async def test_list_generates_correct_query_tag(
-        self, client, fake_qb_session: FakeQBSession
-    ):
+    async def test_list_generates_correct_query_tag(self, client, fake_qb_session: FakeQBSession):
         fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE
         await client.get("/api/v1/customers")
 

@@ -16,9 +16,7 @@ from qb_bridge.reports.csv_export import report_to_csv
 from qb_bridge.reports.engine import run_report
 from qb_bridge.reports.pdf import report_to_pdf
 
-router = APIRouter(
-    prefix="/api/v1/reports", tags=["Reports"], route_class=StrictQueryParamsRoute
-)
+router = APIRouter(prefix="/api/v1/reports", tags=["Reports"], route_class=StrictQueryParamsRoute)
 
 
 # ---------------------------------------------------------------------------
