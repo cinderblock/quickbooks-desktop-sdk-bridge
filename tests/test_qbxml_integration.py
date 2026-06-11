@@ -11,17 +11,13 @@ Each test class corresponds to one of the original bug reports.
 
 from __future__ import annotations
 
-import pytest
-
 from tests.conftest import (
-    ACCOUNT_LIST_ITERATOR_RESPONSE,
     ACCOUNT_LIST_RESPONSE,
     CHECK_DETAIL_RESPONSE,
     CUSTOMER_LIST_ITERATOR_RESPONSE,
     REPORT_RESPONSE,
     FakeQBSession,
 )
-
 
 # ---------------------------------------------------------------------------
 # Bug 1 — MaxReturned >= 100 must not inject iterator="Start"
@@ -589,7 +585,7 @@ class TestTransactionLineItems:
     async def test_invoice_get_includes_line_items(self, client, fake_qb_session: FakeQBSession):
         """All transaction entities (not just Check) should request line items."""
         # Use a generic OK response — we just need to verify the request XML
-        resp = await client.get("/api/v1/invoices/TXN-999")
+        await client.get("/api/v1/invoices/TXN-999")
 
         rq = fake_qb_session.find_request_element()
         assert rq.tag == "InvoiceQueryRq"
@@ -600,7 +596,7 @@ class TestTransactionLineItems:
     ):
         """List entities (Account, Customer, etc.) should NOT include IncludeLineItems."""
         fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE
-        resp = await client.get("/api/v1/accounts/80000001-1234567890")
+        await client.get("/api/v1/accounts/80000001-1234567890")
 
         rq = fake_qb_session.find_request_element()
         assert rq.tag == "AccountQueryRq"
@@ -611,7 +607,7 @@ class TestTransactionLineItems:
     async def test_include_line_items_dtd_order(self, client, fake_qb_session: FakeQBSession):
         """IncludeLineItems must come after TxnID in DTD order."""
         fake_qb_session.response_xml = CHECK_DETAIL_RESPONSE
-        resp = await client.get("/api/v1/checks/85-1613406293")
+        await client.get("/api/v1/checks/85-1613406293")
 
         rq = fake_qb_session.find_request_element()
         tags = [child.tag for child in rq]

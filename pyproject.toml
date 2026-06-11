@@ -52,5 +52,11 @@ ignore = [
     "B008",  # Depends() in defaults is standard FastAPI pattern
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# svc.py must insert the project src dir into sys.path before importing the
+# package, because pythonservice.exe (the pywin32 host) doesn't know the
+# project layout. Its module-level imports therefore legitimately follow code.
+"src/qb_bridge/service/svc.py" = ["E402"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

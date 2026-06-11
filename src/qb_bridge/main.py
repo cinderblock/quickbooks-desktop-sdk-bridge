@@ -158,6 +158,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Global exception handler for QB errors
     from fastapi.responses import JSONResponse
+
     from qb_bridge.qb.exceptions import QBError
 
     @app.exception_handler(QBError)

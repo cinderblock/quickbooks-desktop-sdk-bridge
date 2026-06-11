@@ -9,17 +9,12 @@ route-handler → XML-builder pipeline without a company file.
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
-from unittest.mock import AsyncMock
-
 import pytest
 from httpx import ASGITransport, AsyncClient
 from lxml import etree
 
 from qb_bridge.config import Settings
 from qb_bridge.main import create_app
-
 
 # ---------------------------------------------------------------------------
 # Fake QB session — captures XML, returns canned responses
