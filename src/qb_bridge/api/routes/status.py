@@ -8,10 +8,11 @@ from fastapi import APIRouter, Depends, Request
 
 from qb_bridge import __version__
 from qb_bridge.api.deps import get_qb_session, require_api_key
+from qb_bridge.api.strict import StrictQueryParamsRoute
 from qb_bridge.qb.process import is_qb_running
 from qb_bridge.qb.session import QBSessionManager
 
-router = APIRouter(prefix="/api/v1", tags=["Status"])
+router = APIRouter(prefix="/api/v1", tags=["Status"], route_class=StrictQueryParamsRoute)
 
 _start_time = time.monotonic()
 

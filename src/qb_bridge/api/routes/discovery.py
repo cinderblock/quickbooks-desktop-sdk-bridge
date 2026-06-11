@@ -6,9 +6,10 @@ from fastapi import APIRouter, Depends, Request
 
 from qb_bridge import __version__
 from qb_bridge.api.deps import require_api_key
+from qb_bridge.api.strict import StrictQueryParamsRoute
 from qb_bridge.qb.entities import ENTITIES
 
-router = APIRouter(tags=["Discovery"])
+router = APIRouter(tags=["Discovery"], route_class=StrictQueryParamsRoute)
 
 
 @router.get(

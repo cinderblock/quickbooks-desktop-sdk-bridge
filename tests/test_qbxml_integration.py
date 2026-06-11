@@ -186,20 +186,24 @@ class TestTransactionFilters:
     QuickBooks rejects the whole request with a parse error (HTTP 502).
     """
 
-    async def test_active_filter_ignored_for_transactions(
+    async def test_active_rejected_for_transactions(
         self, client, fake_qb_session: FakeQBSession
     ):
-        """ActiveStatus does not exist on transaction queries — it must be
-        omitted (previously emitted it and caused a 502)."""
+        """ActiveStatus does not exist on transaction queries. Rather than
+        silently dropping the filter, the request must be rejected."""
         fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE
         resp = await client.get("/api/v1/checks?active=All&max_returned=10")
-        assert resp.status_code == 200
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["error"]["code"] == "PARAM_NOT_APPLICABLE"
 
-        rq = fake_qb_session.find_request_element()
-        assert rq.tag == "CheckQueryRq"
-        assert rq.find("ActiveStatus") is None, (
-            "transaction queries must not emit ActiveStatus"
-        )
+    async def test_active_default_ok_for_transactions(
+        self, client, fake_qb_session: FakeQBSession
+    ):
+        """Not sending 'active' at all must still work for transactions."""
+        fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE
+        resp = await client.get("/api/v1/checks?max_returned=10")
+        assert resp.status_code == 200
+        assert fake_qb_session.find_request_element().find("ActiveStatus") is None
 
     async def test_modified_after_uses_range_filter_for_transactions(
         self, client, fake_qb_session: FakeQBSession
@@ -247,16 +251,15 @@ class TestTransactionFilters:
         assert tdr.find("FromTxnDate").text == "2026-01-01"
         assert tdr.find("ToTxnDate") is None
 
-    async def test_date_params_ignored_for_list_entities(
+    async def test_date_params_rejected_for_list_entities(
         self, client, fake_qb_session: FakeQBSession
     ):
-        """List entities have no TxnDate — from_date/to_date must be ignored."""
+        """List entities have no TxnDate — from_date/to_date must be rejected,
+        not silently ignored."""
         fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE
         resp = await client.get("/api/v1/accounts?from_date=2026-01-01&max_returned=10")
-        assert resp.status_code == 200
-
-        rq = fake_qb_session.find_request_element()
-        assert rq.find("TxnDateRangeFilter") is None
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["error"]["code"] == "PARAM_NOT_APPLICABLE"
 
     async def test_entity_name_filter_for_transactions(
         self, client, fake_qb_session: FakeQBSession
@@ -279,16 +282,14 @@ class TestTransactionFilters:
         tags = [child.tag for child in rq]
         assert tags.index("MaxReturned") < tags.index("EntityFilter")
 
-    async def test_entity_name_ignored_for_list_entities(
+    async def test_entity_name_rejected_for_list_entities(
         self, client, fake_qb_session: FakeQBSession
     ):
-        """List entities have no EntityFilter — entity_name must be ignored."""
+        """List entities have no EntityFilter — entity_name must be rejected."""
         fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE
         resp = await client.get("/api/v1/customers?entity_name=Acme&max_returned=10")
-        assert resp.status_code == 200
-
-        rq = fake_qb_session.find_request_element()
-        assert rq.find("EntityFilter") is None
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["error"]["code"] == "PARAM_NOT_APPLICABLE"
 
 
 # ---------------------------------------------------------------------------
@@ -376,6 +377,49 @@ class TestIteratorPagination:
         rq = fake_qb_session.find_request_element()
         assert rq.tag == "InvoiceQueryRq"
         assert rq.get("iterator") == "Start"
+
+
+# ---------------------------------------------------------------------------
+# Unknown query parameters must be rejected, never silently ignored
+# ---------------------------------------------------------------------------
+
+
+class TestUnknownQueryParams:
+    """A query parameter the endpoint doesn't declare must produce a 400, so a
+    client typo or unsupported option fails loudly instead of doing nothing."""
+
+    async def test_unknown_param_on_list(self, client, fake_qb_session: FakeQBSession):
+        fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE
+        resp = await client.get("/api/v1/checks?sort=date&max_returned=10")
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["error"]["code"] == "UNKNOWN_QUERY_PARAM"
+        assert "sort" in body["error"]["message"]
+
+    async def test_reported_noop_params_now_rejected(
+        self, client, fake_qb_session: FakeQBSession
+    ):
+        """The exact params the bug report said were silently ignored."""
+        fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE
+        for bad in ("sort=x", "order=desc", "txn_date_from=2026-01-01", "from_date2=x"):
+            resp = await client.get(f"/api/v1/checks?{bad}&max_returned=10")
+            assert resp.status_code == 400, f"{bad} should be rejected"
+            assert resp.json()["error"]["code"] == "UNKNOWN_QUERY_PARAM"
+
+    async def test_unknown_param_on_report(self, client, fake_qb_session: FakeQBSession):
+        fake_qb_session.response_xml = REPORT_RESPONSE
+        resp = await client.get("/api/v1/reports/profit-and-loss?bogus=1")
+        assert resp.status_code == 400
+        assert resp.json()["error"]["code"] == "UNKNOWN_QUERY_PARAM"
+
+    async def test_known_params_still_accepted(self, client, fake_qb_session: FakeQBSession):
+        """Sanity: a fully-valid request is unaffected by the strict check."""
+        fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE
+        resp = await client.get(
+            "/api/v1/checks?from_date=2026-01-01&to_date=2026-12-31"
+            "&entity_name=Acme&name=1001&max_returned=10"
+        )
+        assert resp.status_code == 200
 
 
 # ---------------------------------------------------------------------------

@@ -5,10 +5,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from qb_bridge.api.deps import get_qb_session, require_api_key, require_permission
+from qb_bridge.api.strict import StrictQueryParamsRoute
 from qb_bridge.qb import xml_builder, xml_parser
 from qb_bridge.qb.session import QBSessionManager
 
-router = APIRouter(prefix="/api/v1", tags=["Company"])
+router = APIRouter(prefix="/api/v1", tags=["Company"], route_class=StrictQueryParamsRoute)
 
 
 @router.get(

@@ -6,9 +6,10 @@ for any registered entity, reducing per-entity boilerplate to zero.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 
 from qb_bridge.api.deps import get_qb_session, require_api_key, require_permission
+from qb_bridge.api.strict import StrictQueryParamsRoute
 from qb_bridge.qb import xml_builder, xml_parser
 from qb_bridge.qb.entities import EntityDef
 from qb_bridge.qb.session import QBSessionManager
@@ -23,6 +24,7 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
     router = APIRouter(
         prefix=f"/api/v1/{entity.rest_path}",
         tags=[entity.name],
+        route_class=StrictQueryParamsRoute,
     )
 
     # Capture entity fields in local vars for the closure
@@ -42,6 +44,7 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
             name=f"list_{safe_path}",
         )
         async def list_entities(
+            request: Request,
             session: QBSessionManager = Depends(get_qb_session),
             key: dict = Depends(require_api_key),
             _perm=Depends(require_permission(ent_name, "list")),
@@ -77,6 +80,43 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
                 ),
             ),
         ):
+            # Reject parameters that don't apply to this entity type rather than
+            # silently ignoring them (a silent no-op hides client mistakes).
+            sent = request.query_params
+            if ent_is_txn:
+                if "active" in sent:
+                    raise HTTPException(
+                        400,
+                        detail={
+                            "ok": False,
+                            "error": {
+                                "code": "PARAM_NOT_APPLICABLE",
+                                "message": (
+                                    f"'active' does not apply to {ent_name}: transactions "
+                                    f"have no active/inactive status. Remove it, or use "
+                                    f"from_date/to_date/entity_name to filter transactions."
+                                ),
+                            },
+                        },
+                    )
+            else:
+                txn_only = [p for p in ("from_date", "to_date", "entity_name") if p in sent]
+                if txn_only:
+                    raise HTTPException(
+                        400,
+                        detail={
+                            "ok": False,
+                            "error": {
+                                "code": "PARAM_NOT_APPLICABLE",
+                                "message": (
+                                    f"{', '.join(txn_only)} only appl{'ies' if len(txn_only) == 1 else 'y'} "
+                                    f"to transaction entities, not {ent_name}. Use 'name'/'active'/"
+                                    f"'modified_after' for list entities."
+                                ),
+                            },
+                        },
+                    )
+
             filters: dict = {}
 
             # Determine iterator mode

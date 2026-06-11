@@ -59,6 +59,13 @@ Every QuickBooks entity gets a full set of REST endpoints:
 
 > **Transactions are returned oldest-first** and there is no newest-first option in qbXML. To reach recent records in a table with more than `max_returned` rows, use `from_date`/`to_date` to window by date, or use `iterator_id` to page through all of them.
 
+> **Strict parameters.** The API never silently ignores a query parameter. An unknown
+> parameter (typo or unsupported option) returns `400 UNKNOWN_QUERY_PARAM`. A parameter
+> that doesn't apply to the target entity — `active` on a transaction, or
+> `from_date`/`to_date`/`entity_name` on a list entity — returns `400 PARAM_NOT_APPLICABLE`.
+> Both responses list what *is* accepted, so a wrong call fails immediately instead of
+> appearing to work.
+
 #### Filtering by job — important limitation
 
 `entity_name` matches a transaction's **top-level** entity:
