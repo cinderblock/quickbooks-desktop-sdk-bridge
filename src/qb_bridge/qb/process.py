@@ -74,15 +74,20 @@ def can_connect_to_qb() -> bool:
             rp.EndSession(ticket)
             rp.CloseConnection()
             return True
-        except Exception:
+        except Exception as exc:
             import contextlib
 
+            # Not ready is a normal, expected state (QB closed, company file
+            # not open, app not authorized) — log at debug so the reason is
+            # discoverable without spamming a polling caller.
+            log.debug("can_connect_to_qb: probe failed: %s", exc)
             with contextlib.suppress(Exception):
                 rp.CloseConnection()
             return False
         finally:
             pythoncom.CoUninitialize()
-    except Exception:
+    except Exception as exc:
+        log.debug("can_connect_to_qb: COM init/dispatch failed: %s", exc)
         return False
 
 
@@ -111,14 +116,29 @@ def launch_qb(
 
 
 def close_qb(force: bool = False) -> bool:
-    """Close QuickBooks Desktop. Returns True if close was attempted."""
+    """Close QuickBooks Desktop. Returns True only if QB is no longer running.
+
+    A caller relying on this to release the company-file lock must be able to
+    trust the result, so we verify QB actually stopped rather than reporting
+    success just because the command was issued.
+    """
+    if not is_qb_running():
+        return True
     try:
-        subprocess.run(
-            ["powershell", "-Command", "Stop-Process -Name 'QBW32' -Force -ErrorAction SilentlyContinue"],
+        result = subprocess.run(
+            ["powershell", "-Command", "Stop-Process -Name 'QBW32' -Force"],
             capture_output=True,
+            text=True,
             timeout=15,
         )
-        return True
     except Exception as exc:
-        log.warning("close_qb failed: %s", exc)
+        log.warning("close_qb: failed to run Stop-Process: %s", exc)
         return False
+
+    if result.returncode != 0:
+        log.warning("close_qb: Stop-Process exited %d: %s", result.returncode, result.stderr.strip())
+
+    if is_qb_running():
+        log.warning("close_qb: QuickBooks is still running after Stop-Process")
+        return False
+    return True

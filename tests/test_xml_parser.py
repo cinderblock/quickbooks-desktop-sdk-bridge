@@ -110,6 +110,26 @@ class TestCheckStatus:
         assert exc_info.value.qb_status_code == 500
         assert "not find" in str(exc_info.value)
 
+    def test_error_on_second_message_is_not_swallowed(self):
+        """A batched response where the FIRST message is OK but a later one is
+        an Error must still raise — not silently report success."""
+        batched = """<?xml version="1.0" ?>
+<QBXML>
+<QBXMLMsgsRs>
+<CustomerQueryRs requestID="1" statusCode="0" statusSeverity="Info" statusMessage="Status OK">
+</CustomerQueryRs>
+<InvoiceQueryRs requestID="2" statusCode="3100" statusSeverity="Error" statusMessage="Boom on the second request.">
+</InvoiceQueryRs>
+</QBXMLMsgsRs>
+</QBXML>"""
+        with pytest.raises(QBRequestError) as exc_info:
+            check_status(batched)
+        assert exc_info.value.qb_status_code == 3100
+        assert "Boom" in str(exc_info.value)
+        # parse_response must reject it too
+        with pytest.raises(QBRequestError):
+            parse_response(batched)
+
 
 class TestParseResponse:
     def test_parse_list(self):

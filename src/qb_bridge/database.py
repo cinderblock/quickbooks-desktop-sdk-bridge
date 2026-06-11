@@ -81,8 +81,12 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
         )
         await db.commit()
         log.info("Migrated: added permissions column to api_keys (default: read-only)")
-    except Exception:
-        pass  # Column already exists
+    except aiosqlite.OperationalError as exc:
+        # The only expected failure is the column already existing on an
+        # already-migrated DB. Anything else (locked DB, disk error, bad
+        # schema) is a real problem and must not be swallowed.
+        if "duplicate column name" not in str(exc).lower():
+            raise
 
     # Migration: convert existing admin keys to read-only
     # Keys that still have the old default get downgraded

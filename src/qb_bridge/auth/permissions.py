@@ -82,16 +82,29 @@ def check_permission(
 
 
 def parse_permissions(perms_json: str | None) -> dict[str, list[str]]:
-    """Parse permissions JSON string, defaulting to admin if empty/invalid."""
+    """Parse a key's stored permissions JSON.
+
+    An empty/unset value means a brand-new key and yields the read-only
+    default. A *non-empty but unparseable* value means the stored permissions
+    are corrupt — we log it and **deny everything** (return ``{}``) rather than
+    silently substituting a permissive default, which would hide the corruption
+    and risk granting access the key was never meant to have.
+    """
     if not perms_json:
-        return DEFAULT_PERMISSIONS
+        return dict(DEFAULT_PERMISSIONS)
     try:
         perms = json.loads(perms_json)
-        if isinstance(perms, dict):
-            return perms
     except (json.JSONDecodeError, TypeError):
-        pass
-    return DEFAULT_PERMISSIONS
+        log.error("Corrupt permissions JSON on API key; denying all access: %r", perms_json)
+        return {}
+    if not isinstance(perms, dict):
+        log.error(
+            "Permissions JSON is not an object (%s); denying all access: %r",
+            type(perms).__name__,
+            perms_json,
+        )
+        return {}
+    return perms
 
 
 def serialize_permissions(perms: dict[str, list[str]]) -> str:

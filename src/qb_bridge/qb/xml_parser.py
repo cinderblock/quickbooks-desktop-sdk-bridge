@@ -88,6 +88,22 @@ def _elem_to_dict(elem: etree._Element) -> dict | str:
     return result
 
 
+def _raise_on_error_status(msgs: etree._Element) -> None:
+    """Raise ``QBRequestError`` if ANY response message reports Error severity.
+
+    qbXML may return multiple ``*Rs`` siblings (e.g. batched requests). Only
+    inspecting the first would silently swallow an error reported on any of the
+    others, so every message is checked.
+    """
+    for rs in msgs:
+        if rs.get("statusSeverity") == "Error":
+            raise QBRequestError(
+                rs.get("statusMessage", "Unknown error"),
+                qb_status_code=int(rs.get("statusCode", "-1")),
+                severity="Error",
+            )
+
+
 def check_status(xml_string: str) -> tuple[int, str, str]:
     """Extract ``(statusCode, statusSeverity, statusMessage)`` from the
     first ``*Rs`` element in a qbXML response.
@@ -101,13 +117,12 @@ def check_status(xml_string: str) -> tuple[int, str, str]:
     if msgs is None:
         raise QBRequestError("Invalid qbXML response: no QBXMLMsgsRs element")
 
+    _raise_on_error_status(msgs)
+
     rs = msgs[0]  # first response element
     code = int(rs.get("statusCode", "-1"))
     severity = rs.get("statusSeverity", "Error")
     message = rs.get("statusMessage", "Unknown error")
-
-    if severity == "Error":
-        raise QBRequestError(message, qb_status_code=code, severity=severity)
 
     return code, severity, message
 
@@ -121,13 +136,12 @@ def parse_response(xml_string: str) -> QBResponse:
     if msgs is None:
         raise QBRequestError("Invalid qbXML response: no QBXMLMsgsRs element")
 
+    _raise_on_error_status(msgs)
+
     rs = msgs[0]
     code = int(rs.get("statusCode", "-1"))
     severity = rs.get("statusSeverity", "Error")
     message = rs.get("statusMessage", "Unknown error")
-
-    if severity == "Error":
-        raise QBRequestError(message, qb_status_code=code, severity=severity)
 
     iterator_id = rs.get("iteratorID")
     remaining_str = rs.get("iteratorRemainingCount")
@@ -192,13 +206,9 @@ def parse_report(xml_string: str) -> ReportData:
     if msgs is None:
         raise QBRequestError("Invalid report response: no QBXMLMsgsRs")
 
-    rs = msgs[0]
-    code = int(rs.get("statusCode", "-1"))
-    severity = rs.get("statusSeverity", "Error")
-    message = rs.get("statusMessage", "")
+    _raise_on_error_status(msgs)
 
-    if severity == "Error":
-        raise QBRequestError(message, qb_status_code=code, severity=severity)
+    rs = msgs[0]
 
     report = ReportData()
 
