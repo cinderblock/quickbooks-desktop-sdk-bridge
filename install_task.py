@@ -1,4 +1,4 @@
-"""Install QBBridge as a login-triggered scheduled task.
+r"""Install QBBridge as a login-triggered scheduled task.
 Run from an Admin command prompt:
     .venv\Scripts\python.exe install_task.py
 """
