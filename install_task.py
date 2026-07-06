@@ -10,11 +10,30 @@ import subprocess
 import sys
 import time
 
+import ctypes
+
+
+def _short_path(path: str) -> str:
+    """Return the 8.3 short path for *path* (which must exist).
+
+    Task Scheduler truncates a <Command> at the first space, so a path like
+    ``C:\\Users\\me\\QuickBooks Bridge\\...`` makes the task fail with result 2
+    (ERROR_FILE_NOT_FOUND). The space-free short path avoids that entirely.
+    Falls back to the original path if 8.3 names are disabled on the volume.
+    """
+    buf = ctypes.create_unicode_buffer(32768)
+    n = ctypes.windll.kernel32.GetShortPathNameW(path, buf, len(buf))
+    return buf.value if 0 < n < len(buf) else path
+
+
 work_dir = os.path.dirname(os.path.abspath(__file__))
 # Use python.exe not pythonw.exe — pythonw crashes silently
-# The task runs with Hidden=true so no console window appears
-python_exe = os.path.join(work_dir, ".venv", "Scripts", "python.exe")
-launcher = os.path.join(work_dir, "start_server.py")
+# The task runs with Hidden=true so no console window appears.
+# Short paths are required: the project dir contains a space, which Task
+# Scheduler would otherwise truncate (task fails with result 2).
+python_exe = _short_path(os.path.join(work_dir, ".venv", "Scripts", "python.exe"))
+launcher = _short_path(os.path.join(work_dir, "start_server.py"))
+work_dir_short = _short_path(work_dir)
 
 print()
 print("  QuickBooks Bridge - Task Scheduler Installer")
@@ -87,7 +106,7 @@ xml = f"""<?xml version="1.0" encoding="UTF-16"?>
     <Exec>
       <Command>{python_exe}</Command>
       <Arguments>{launcher}</Arguments>
-      <WorkingDirectory>{work_dir}</WorkingDirectory>
+      <WorkingDirectory>{work_dir_short}</WorkingDirectory>
     </Exec>
   </Actions>
 </Task>"""
@@ -96,15 +115,22 @@ xml_path = os.path.join(os.environ["TEMP"], "qbbridge_task.xml")
 with open(xml_path, "w", encoding="utf-16") as f:
     f.write(xml)
 
+# /IT (interactive token) is required: the task's principal uses
+# LogonType=InteractiveToken, and without /IT schtasks demands a password
+# and fails.
 result = subprocess.run(
     ["schtasks", "/Create", "/TN", "QBBridge", "/XML", xml_path,
-     "/RU", username, "/F"],
+     "/RU", username, "/IT", "/F"],
     capture_output=True, text=True,
 )
 os.remove(xml_path)
 
 if result.returncode != 0:
-    print(f"  ERROR: {result.stderr}")
+    # schtasks writes failures to stdout as often as stderr — show both so the
+    # real reason is never swallowed.
+    detail = (result.stderr.strip() or result.stdout.strip()
+              or f"schtasks exited {result.returncode}")
+    print(f"  ERROR: {detail}")
     sys.exit(1)
 print("  Task created.")
 
