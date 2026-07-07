@@ -19,7 +19,12 @@ async def run_report(
     request_type: str,
     body: dict,
 ) -> ReportData:
-    """Execute a report query and return parsed data."""
+    """Execute a report query and return parsed data.
+
+    Reports can run much longer than a CRUD call, so they use the session's
+    larger ``report_timeout`` rather than the default request timeout.
+    """
     request_xml = xml_builder.build_request(request_type, body)
-    response_xml = await session.execute(request_xml)
+    report_timeout = getattr(session, "report_timeout", None)
+    response_xml = await session.execute(request_xml, timeout=report_timeout)
     return xml_parser.parse_report(response_xml)

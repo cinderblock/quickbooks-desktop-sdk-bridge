@@ -503,6 +503,14 @@ class TestReportEndpoints:
         rq = fake_qb_session.find_request_element()
         assert rq.find("ReportEntityFilter") is None
 
+    async def test_report_uses_longer_timeout(self, client, fake_qb_session: FakeQBSession):
+        """Reports can run long (e.g. General Ledger), so they must execute with
+        the session's larger report_timeout, not the default CRUD timeout."""
+        fake_qb_session.response_xml = REPORT_RESPONSE
+        resp = await client.get("/api/v1/reports/general-ledger")
+        assert resp.status_code == 200
+        assert fake_qb_session.last_timeout == 180.0
+
     async def test_report_basis_after_summarize_by(self, client, fake_qb_session: FakeQBSession):
         """SummarizeColumnsBy must precede ReportBasis in the DTD."""
         fake_qb_session.response_xml = REPORT_RESPONSE
@@ -624,3 +632,10 @@ class TestBasicListEndpoint:
 
         rq = fake_qb_session.find_request_element()
         assert rq.tag == "CustomerQueryRq"
+
+    async def test_list_uses_default_timeout(self, client, fake_qb_session: FakeQBSession):
+        """CRUD list calls must NOT inherit the long report timeout — they pass
+        no override, so execute() uses the default request_timeout."""
+        fake_qb_session.response_xml = ACCOUNT_LIST_RESPONSE
+        await client.get("/api/v1/accounts")
+        assert fake_qb_session.last_timeout is None

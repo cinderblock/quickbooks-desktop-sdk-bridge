@@ -35,6 +35,9 @@ class FakeQBSession:
         self.last_request_xml: str = ""
         self.requests: list[str] = []
         self.response_xml: str = _EMPTY_OK_RESPONSE
+        self.last_timeout: float | None = None
+        # Matches the production default so report calls can assert on it.
+        self.report_timeout: float = 180.0
 
     @property
     def state(self) -> str:
@@ -50,9 +53,10 @@ class FakeQBSession:
     async def stop(self) -> None:  # noqa: D102
         pass
 
-    async def execute(self, qbxml: str) -> str:
-        """Record the request and return the canned response."""
+    async def execute(self, qbxml: str, timeout: float | None = None) -> str:
+        """Record the request (and its timeout) and return the canned response."""
         self.last_request_xml = qbxml
+        self.last_timeout = timeout
         self.requests.append(qbxml)
         return self.response_xml
 

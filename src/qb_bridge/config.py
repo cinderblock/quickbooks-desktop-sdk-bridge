@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     auto_launch_qb: bool = False
     auto_close_qb: bool = False
     request_timeout: float = 60.0
+    # Reports (esp. General Ledger over a wide range) can legitimately take far
+    # longer than a CRUD call, so they get their own, larger timeout.
+    report_timeout: float = 180.0
 
     model_config = {"env_prefix": "QBB_"}
 

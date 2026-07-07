@@ -109,6 +109,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             qb_exe_path=settings.qb_exe_path,
             auto_close_qb=settings.auto_close_qb,
             request_timeout=settings.request_timeout,
+            report_timeout=settings.report_timeout,
         )
         await qb_session.start()
         app.state.qb_session = qb_session

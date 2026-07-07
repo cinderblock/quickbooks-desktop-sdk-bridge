@@ -37,6 +37,7 @@ class QBSessionManager:
         qb_exe_path: str = "",
         auto_close_qb: bool = False,
         request_timeout: float = 90.0,
+        report_timeout: float = 180.0,
     ) -> None:
         self.company_file = company_file
         self.idle_timeout = idle_timeout
@@ -44,6 +45,7 @@ class QBSessionManager:
         self.qb_exe_path = qb_exe_path
         self.auto_close_qb = auto_close_qb
         self.request_timeout = request_timeout
+        self.report_timeout = report_timeout
 
         self._proc: subprocess.Popen | None = None
         self._lock = asyncio.Lock()
@@ -77,10 +79,16 @@ class QBSessionManager:
         await self._kill_worker()
         log.info("QBSessionManager stopped")
 
-    async def execute(self, qbxml: str) -> str:
-        """Send a qbXML request to the worker subprocess."""
+    async def execute(self, qbxml: str, timeout: float | None = None) -> str:
+        """Send a qbXML request to the worker subprocess.
+
+        ``timeout`` overrides the default ``request_timeout`` for this one call
+        (reports pass the larger ``report_timeout``).
+        """
         if not self._running:
             raise QBConnectionError("QBSessionManager is not running")
+
+        effective_timeout = timeout if timeout is not None else self.request_timeout
 
         async with self._lock:
             self._last_activity = time.monotonic()
@@ -103,13 +111,15 @@ class QBSessionManager:
             try:
                 response_line = await asyncio.wait_for(
                     asyncio.get_running_loop().run_in_executor(None, self._proc.stdout.readline),
-                    timeout=self.request_timeout,
+                    timeout=effective_timeout,
                 )
             except TimeoutError as exc:
                 self._connection_state = "error"
                 await self._kill_worker()
                 raise QBTimeoutError(
-                    f"Worker did not respond within {self.request_timeout}s"
+                    f"QuickBooks did not respond within {effective_timeout:.0f}s. The request is "
+                    "likely too large — for reports, narrow the date range (from_date/to_date) "
+                    "or filter by entity; for lists, lower max_returned or page with iterator_id."
                 ) from exc
 
             if not response_line:
