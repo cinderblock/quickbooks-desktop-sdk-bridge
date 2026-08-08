@@ -210,6 +210,10 @@ class QBSessionManager:
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,  # Line-buffered
+            # python.exe is a console app: without this it pops up a console
+            # window on the user's desktop, which someone will eventually close
+            # (killing the worker). The pipes above still work fine.
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
 
         # Wait for "ready" message

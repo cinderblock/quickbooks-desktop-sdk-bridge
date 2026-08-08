@@ -130,6 +130,8 @@ def close_qb(force: bool = False) -> bool:
             capture_output=True,
             text=True,
             timeout=15,
+            # Don't flash a console window on the user's desktop
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except Exception as exc:
         log.warning("close_qb: failed to run Stop-Process: %s", exc)
