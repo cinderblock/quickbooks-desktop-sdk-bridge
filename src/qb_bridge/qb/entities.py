@@ -19,6 +19,14 @@ class EntityDef:
     supports_iterator: bool = False  # qbXML DTD includes iterator attribute
     id_field: str = "ListID"
     description: str = ""
+    # Transactions only. Whether the query takes RefNumberFilter (the `name`
+    # parameter) and IncludeLineItems (get by id). TimeTracking has neither.
+    has_ref_number: bool = True
+    has_line_items: bool = True
+    # Transactions only. The element the `entity_name` parameter becomes:
+    # most transactions take EntityFilter (with sub-jobs); TimeTracking takes
+    # TimeTrackingEntityFilter, which only matches an exact FullName.
+    entity_filter: str = "EntityFilter"
 
     def to_dict(self) -> dict:
         return {
@@ -275,6 +283,38 @@ ENTITIES: dict[str, EntityDef] = {
         supports_iterator=True,
         id_field="TxnID",
         description="Bank deposits",
+    ),
+    "OtherName": EntityDef(
+        "OtherName",
+        "other-names",
+        supports_add=True,
+        supports_mod=True,
+        supports_query=True,
+        supports_delete=True,
+        description="Other names (people and companies that aren't customers, vendors or employees)",
+    ),
+    "PayrollItemWage": EntityDef(
+        "PayrollItemWage",
+        "payroll-items/wage",
+        supports_add=True,
+        supports_mod=False,
+        supports_query=True,
+        supports_delete=True,
+        description="Wage payroll items (hourly, salary, overtime...)",
+    ),
+    "TimeTracking": EntityDef(
+        "TimeTracking",
+        "time-tracking",
+        supports_add=True,
+        supports_mod=True,
+        supports_query=True,
+        supports_delete=True,
+        is_transaction=True,
+        id_field="TxnID",
+        has_ref_number=False,
+        has_line_items=False,
+        entity_filter="TimeTrackingEntityFilter",
+        description="Timesheet entries: a duration for an employee, vendor or other name on a date",
     ),
     "BillPaymentCheck": EntityDef(
         "BillPaymentCheck",

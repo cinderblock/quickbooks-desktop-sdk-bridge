@@ -39,6 +39,7 @@ _QUERY_ELEMENT_ORDER = (
     "ModifiedDateRangeFilter",
     "TxnDateRangeFilter",
     "EntityFilter",
+    "TimeTrackingEntityFilter",
     "AccountFilter",
     "RefNumberFilter",
     "RefNumberRangeFilter",

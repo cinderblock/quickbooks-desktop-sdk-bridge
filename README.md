@@ -43,7 +43,7 @@ Every QuickBooks entity gets a full set of REST endpoints:
 | `PUT` | `/api/v1/{entities}/{id}` | Update (requires EditSequence) |
 | `DELETE` | `/api/v1/{entities}/{id}` | Delete |
 
-**Supported entities:** accounts, customers, vendors, employees, items (service, inventory, non-inventory), invoices, bills, checks, deposits, payments, journal-entries, estimates, sales-receipts, credit-memos, purchase-orders, bill-payments, classes, terms, sales-reps, payment-methods
+**Supported entities:** accounts, customers, vendors, employees, other-names, items (service, inventory, non-inventory), payroll-items/wage, invoices, bills, checks, deposits, payments, journal-entries, estimates, sales-receipts, credit-memos, purchase-orders, bill-payments, time-tracking, classes, terms, sales-reps, payment-methods
 
 ### Query parameters (list endpoints)
 
@@ -54,7 +54,7 @@ Every QuickBooks entity gets a full set of REST endpoints:
 | `active` | Filter by status: `ActiveOnly`, `InactiveOnly`, `All`. **List entities only** — ignored for transactions (they have no active status) | `?active=All` |
 | `modified_after` | Only records modified after this datetime | `?modified_after=2024-01-01T00:00:00` |
 | `from_date` / `to_date` | **Transactions only.** Filter by `TxnDate` range (YYYY-MM-DD) | `?from_date=2026-01-01&to_date=2026-12-31` |
-| `entity_name` | **Transactions only.** Filter by the transaction's customer/job/vendor, including sub-jobs. Exact `FullName` (as returned by `/customers` or `/vendors`) | `?entity_name=Acme Corp:Phase 1` |
+| `entity_name` | **Transactions only.** Filter by the transaction's customer/job/vendor, including sub-jobs. Exact `FullName` (as returned by `/customers` or `/vendors`). For `time-tracking` it's the employee/vendor/other name the time belongs to, exact match only (no sub-jobs) | `?entity_name=Acme Corp:Phase 1` |
 | `iterator_id` | Paginate through large result sets — see below | `?iterator_id=Start` |
 
 > **Transactions are returned oldest-first** and there is no newest-first option in qbXML. To reach recent records in a table with more than `max_returned` rows, use `from_date`/`to_date` to window by date, or use `iterator_id` to page through all of them.
@@ -73,6 +73,43 @@ Every QuickBooks entity gets a full set of REST endpoints:
 - For **checks and bills**, the top-level entity is the **payee (a vendor)**, *not* the job. The job linkage on costs lives at the **line-item level** (`CustomerRef` on each expense/item line), which qbXML transaction queries **cannot** filter on.
 
 So a query like "all costs charged to job X" (the classic job-costing question) cannot be answered by a transaction list query. Use a **report** with the `entity` filter instead — see [Job costing](#reports) (e.g. `reports/profit-and-loss-detail?entity=...` or `reports/general-ledger?entity=...`).
+
+### Time tracking
+
+`/api/v1/time-tracking` reads and writes QuickBooks timesheet entries, for
+integrations that keep time elsewhere and push it in. Each record is a duration
+for one person (employee, vendor or other name) on one date:
+
+```sh
+curl -X POST http://localhost:8743/api/v1/time-tracking \
+  -H "X-API-Key: qbb_..." -H "Content-Type: application/json" \
+  -d '{"TxnDate": "2026-09-16",
+       "EntityRef": {"ListID": "80000001-1234567890"},
+       "CustomerRef": {"ListID": "80000010-1234567890"},
+       "ItemServiceRef": {"ListID": "80000020-1234567890"},
+       "Duration": "PT1H30M0S",
+       "Notes": "Framing",
+       "BillableStatus": "Billable"}'
+```
+
+Fields must be in the order the qbXML `TimeTrackingAdd` element defines (TxnDate,
+EntityRef, CustomerRef, ItemServiceRef, Duration, ClassRef, PayrollItemWageRef,
+Notes, BillableStatus); the bridge keeps the order you send. `PayrollItemWageRef`
+is only accepted for employees. Updates need the record's `EditSequence`; a stale one
+fails with `qb_status_code` 3200. Time records have no reference number (`name`
+isn't accepted), no line items and no iterator.
+
+The people and items such a record points at come from `/employees`, `/vendors`,
+`/other-names`, `/items/service` and `/payroll-items/wage`.
+
+A key for a timesheet integration needs no more than:
+
+```sh
+uv run python -m qb_bridge.cli create-key "Timesheets" \
+  --permissions '{"*": ["read"], "TimeTracking": ["read", "write"], "Customer": ["read", "insert"]}'
+```
+
+(`Customer: insert` only if the integration creates jobs.)
 
 ### Iterator pagination
 
@@ -244,7 +281,7 @@ The server talks to QuickBooks through a subprocess to avoid COM apartment threa
 
 ```sh
 # Install dev dependencies
-uv sync --group dev
+uv sync --extra dev
 
 # Run tests (no QuickBooks or company file needed)
 uv run pytest tests/ -v

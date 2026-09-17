@@ -32,6 +32,9 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
     ent_id_field = entity.id_field
     ent_is_txn = entity.is_transaction
     ent_supports_iterator = entity.supports_iterator
+    ent_has_ref_number = entity.has_ref_number
+    ent_has_line_items = entity.is_transaction and entity.has_line_items
+    ent_entity_filter = entity.entity_filter
     safe_path = entity.rest_path.replace("-", "_").replace("/", "_")
 
     # ----- LIST -----
@@ -84,6 +87,20 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
             # silently ignoring them (a silent no-op hides client mistakes).
             sent = request.query_params
             if ent_is_txn:
+                if "name" in sent and not ent_has_ref_number:
+                    raise HTTPException(
+                        400,
+                        detail={
+                            "ok": False,
+                            "error": {
+                                "code": "PARAM_NOT_APPLICABLE",
+                                "message": (
+                                    f"'name' does not apply to {ent_name}: it has no reference "
+                                    f"number to match. Use from_date/to_date/entity_name instead."
+                                ),
+                            },
+                        },
+                    )
                 if "active" in sent:
                     raise HTTPException(
                         400,
@@ -172,8 +189,12 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
                 # Filter transactions by the associated customer/job/vendor.
                 # FullNameWithChildren matches the named entity *and* its
                 # sub-entities, so a customer name also catches all its jobs.
+                # TimeTrackingEntityFilter has no such option: exact name only.
                 if entity_name and ent_is_txn:
-                    filters["EntityFilter"] = {"FullNameWithChildren": entity_name}
+                    if ent_entity_filter == "EntityFilter":
+                        filters["EntityFilter"] = {"FullNameWithChildren": entity_name}
+                    else:
+                        filters[ent_entity_filter] = {"FullName": entity_name}
 
                 # TxnDate range filter — transactions only.
                 if ent_is_txn and (from_date or to_date):
@@ -222,7 +243,7 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
             request_xml = xml_builder.query(
                 ent_name,
                 filters=filters,
-                include_line_items=ent_is_txn,
+                include_line_items=ent_has_line_items,
             )
             response_xml = await session.execute(request_xml)
             item = xml_parser.parse_single_entity(response_xml, ent_name)
