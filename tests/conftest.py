@@ -15,6 +15,7 @@ from lxml import etree
 
 from qb_bridge.config import Settings
 from qb_bridge.main import create_app
+from qb_bridge.qb.dialogs import DialogWatcher
 
 # ---------------------------------------------------------------------------
 # Fake QB session — captures XML, returns canned responses
@@ -211,7 +212,17 @@ def fake_qb_session() -> FakeQBSession:
 
 
 @pytest.fixture()
-async def app(fake_qb_session, tmp_path):
+def dialog_watcher() -> DialogWatcher:
+    """A dialog watcher with the built-in rules that never polls for windows.
+
+    The app's lifespan (which would create and start the real one) doesn't run
+    under ASGITransport, so the route dependency is overridden with this.
+    """
+    return DialogWatcher(enabled=False)
+
+
+@pytest.fixture()
+async def app(fake_qb_session, dialog_watcher, tmp_path):
     """Create the FastAPI app with all QB/auth dependencies stubbed out.
 
     The IP-filter middleware is bypassed because httpx's ASGI transport uses
@@ -230,6 +241,7 @@ async def app(fake_qb_session, tmp_path):
     from qb_bridge.api import deps
 
     application.dependency_overrides[deps.get_qb_session] = lambda: fake_qb_session
+    application.dependency_overrides[deps.get_dialog_watcher] = lambda: dialog_watcher
     application.dependency_overrides[deps.require_api_key] = lambda: {
         "id": 1,
         "name": "test-key",

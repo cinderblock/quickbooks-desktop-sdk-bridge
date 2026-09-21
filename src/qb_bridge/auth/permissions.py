@@ -8,7 +8,8 @@ Permissions are stored as a JSON object on each API key::
     {"Invoice": ["read", "insert"], "Report": ["read"]} # invoices r/insert, reports read
 
 Entity names use the QB entity name (e.g. "Customer", "Invoice", "Account")
-or special names: "*" (all entities), "Report" (all reports), "Company" (company info).
+or special names: "*" (all entities), "Report" (all reports), "Company" (company info),
+"Dialog" (viewing and dismissing QuickBooks' modal dialogs).
 
 Operation shorthands:
     "admin"  = everything (read + write + delete)

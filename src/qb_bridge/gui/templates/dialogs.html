@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}QB Dialogs - QB Bridge{% endblock %}
+{% block content %}
+<h2>QuickBooks Dialogs</h2>
+<p>
+    QuickBooks stops answering API requests while one of its own dialogs is open.
+    The watcher checks every {{ watcher.poll_interval }}s and clicks the ones it recognizes;
+    anything else is listed here for you to dismiss.
+</p>
+
+{% if not watcher.enabled %}
+<article><strong>The dialog watcher is disabled.</strong> Set <code>QBB_DIALOG_WATCH=true</code> and restart to enable it.</article>
+{% elif not watcher.elevated %}
+<article>
+    <strong>The bridge is not running elevated.</strong>
+    If QuickBooks runs as administrator, Windows will refuse these clicks.
+    Re-install the scheduled task from an Administrator prompt
+    (<code>python install_task.py</code>).
+</article>
+{% endif %}
+{% if watcher.rules_error %}
+<article><strong>Custom dialog rules were rejected — using built-in rules only.</strong><br>
+<code>{{ watcher.rules_error }}</code></article>
+{% endif %}
+{% if watcher.last_error %}
+<article><strong>Last scan failed:</strong> <code>{{ watcher.last_error }}</code></article>
+{% endif %}
+
+{% if error %}<article><strong>{{ error }}</strong></article>{% endif %}
+{% if message %}<article>{{ message }}</article>{% endif %}
+
+<h3>Open now</h3>
+{% if dialogs %}
+{% for d in dialogs %}
+<article>
+    <header>
+        <strong>{{ d.title or "(untitled window)" }}</strong>
+        {% if d.rule %}
+            <span class="status-badge status-connected">auto: {{ d.rule }} &rarr; {{ d.auto_dismiss_button }}</span>
+        {% else %}
+            <span class="status-badge status-error">no rule</span>
+        {% endif %}
+    </header>
+    <pre style="white-space: pre-wrap;">{{ d.text }}</pre>
+    <form method="post" action="/gui/dialogs/dismiss">
+        <input type="hidden" name="hwnd" value="{{ d.hwnd }}">
+        <fieldset role="group">
+            {% for b in d.buttons %}
+            <button type="submit" name="button" value="{{ b.label }}"
+                    class="{% if b.label != d.auto_dismiss_button %}secondary{% endif %}">
+                Click "{{ b.label }}"
+            </button>
+            {% endfor %}
+        </fieldset>
+    </form>
+</article>
+{% endfor %}
+{% else %}
+<p>No QuickBooks dialogs are open.</p>
+{% endif %}
+
+<h3>Recent activity</h3>
+{% if events %}
+<figure>
+<table class="log-table">
+    <thead>
+        <tr><th>Time</th><th>Action</th><th>Dialog</th><th>Rule</th><th>Button</th><th>Detail</th></tr>
+    </thead>
+    <tbody>
+        {% for e in events %}
+        <tr>
+            <td>{{ e.timestamp }}</td>
+            <td>{{ e.action }}</td>
+            <td>{{ e.title }}</td>
+            <td>{{ e.rule or '-' }}</td>
+            <td>{{ e.button or '-' }}</td>
+            <td>{{ e.detail or '-' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% else %}
+<p>The watcher hasn't had to deal with a dialog yet.</p>
+{% endif %}
+
+<h3>Recognized dialogs ({{ watcher.rules | length }} rules)</h3>
+<p>Add your own in <code>{{ rules_file }}</code> — a JSON array of
+<code>{"name", "title", "button", "body", "description", "enabled"}</code>, where
+<code>title</code>, <code>body</code> and <code>button</code> are regular expressions.</p>
+<figure>
+<table class="log-table">
+    <thead><tr><th>Rule</th><th>Title</th><th>Body</th><th>Clicks</th><th>What it is</th></tr></thead>
+    <tbody>
+        {% for r in watcher.rules %}
+        <tr{% if not r.enabled %} style="opacity: 0.5"{% endif %}>
+            <td>{{ r.name }}{% if not r.enabled %} (disabled){% endif %}</td>
+            <td><code>{{ r.title }}</code></td>
+            <td><code>{{ r.body or '-' }}</code></td>
+            <td><code>{{ r.button }}</code></td>
+            <td>{{ r.description }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% endblock %}

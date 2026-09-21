@@ -15,6 +15,7 @@ from qb_bridge.api.middleware import IPFilterMiddleware, RequestLoggingMiddlewar
 from qb_bridge.api.router import build_api_router
 from qb_bridge.config import Settings, get_settings
 from qb_bridge.database import init_db
+from qb_bridge.qb.dialogs import DialogWatcher
 from qb_bridge.qb.session import QBSessionManager
 
 log = logging.getLogger("qb_bridge")
@@ -114,6 +115,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         await qb_session.start()
         app.state.qb_session = qb_session
 
+        # Watch for QuickBooks' own modal dialogs, which otherwise block every
+        # request until someone clicks them on the QB machine.
+        dialog_watcher = DialogWatcher.from_settings(
+            settings.dialog_rules_file,
+            enabled=settings.dialog_watch,
+            poll_interval=settings.dialog_poll_interval,
+        )
+        await dialog_watcher.start()
+        app.state.dialog_watcher = dialog_watcher
+
         log.info(
             "QuickBooks Bridge v%s started on %s:%d",
             __version__,
@@ -124,6 +135,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         yield
 
         # Shutdown
+        await dialog_watcher.stop()
         await qb_session.stop()
         await db.close()
         log.info("QuickBooks Bridge stopped")

@@ -7,8 +7,9 @@ import time
 from fastapi import APIRouter, Depends, Request
 
 from qb_bridge import __version__
-from qb_bridge.api.deps import get_qb_session, require_api_key
+from qb_bridge.api.deps import get_dialog_watcher, get_qb_session, require_api_key
 from qb_bridge.api.strict import StrictQueryParamsRoute
+from qb_bridge.qb.dialogs import DialogWatcher
 from qb_bridge.qb.process import is_qb_running
 from qb_bridge.qb.session import QBSessionManager
 
@@ -37,9 +38,13 @@ async def health_check():
 async def get_status(
     request: Request,
     session: QBSessionManager = Depends(get_qb_session),
+    watcher: DialogWatcher = Depends(get_dialog_watcher),
     key: dict = Depends(require_api_key),
 ):
     uptime = time.monotonic() - _start_time
+    # From the watcher's last sweep (up to poll_interval seconds old) rather
+    # than a fresh window scan, so polling /status stays cheap.
+    open_dialogs = watcher.open_dialogs
     return {
         "ok": True,
         "data": {
@@ -49,5 +54,9 @@ async def get_status(
             "qb_desktop_running": is_qb_running(),
             "qb_connection_state": session.state,
             "qb_idle_seconds": round(session.idle_seconds, 1),
+            "qb_dialogs_open": len(open_dialogs),
+            # Dialogs nothing knows how to dismiss — these are the ones
+            # actually blocking QuickBooks until a human deals with them.
+            "qb_dialogs_unrecognized": [d.title for d in open_dialogs if watcher.match(d) is None],
         },
     }

@@ -179,6 +179,49 @@ reports). Passing it to a report without one (e.g. `balance-sheet`) returns an e
 | `GET` | `/api/v1/status` | Yes | Connection state, uptime |
 | `GET` | `/api/v1/entities` | Yes | List all entity types and supported operations |
 | `GET` | `/api/v1/company` | Yes | Company info from QB |
+| `GET` | `/api/v1/dialogs` | Yes | QuickBooks dialogs open right now, and the rule that would dismiss each |
+| `GET` | `/api/v1/dialogs/events` | Yes | What the dialog watcher has dismissed, failed on, or not recognized |
+| `POST` | `/api/v1/dialogs/{hwnd}/dismiss` | Yes | Click a button on an open dialog (`?button=OK`) |
+
+## QuickBooks dialogs
+
+QuickBooks Desktop puts up modal dialogs on its own schedule — a scheduled backup that
+failed, an update reminder — and while one is open it stops answering COM requests, so
+every API call hangs until someone clicks it on the QB machine.
+
+The bridge watches for those dialogs (every `QBB_DIALOG_POLL_INTERVAL` seconds) and
+clicks the button the matching rule names. **Only recognized dialogs are clicked**: a
+dialog no rule covers is left alone — it may be asking something only a person should
+answer — and is logged as a warning, listed by `GET /api/v1/dialogs`, counted in
+`/api/v1/status` as `qb_dialogs_unrecognized`, and shown on the **QB Dialogs** page of
+the web GUI, where you can click any of its buttons yourself.
+
+Built-in rules cover a failed/finished scheduled backup and the "update available"
+reminder. To add your own, take the title and text from `GET /api/v1/dialogs` and write
+them to `C:\ProgramData\QBBridge\dialog_rules.json`:
+
+```json
+[
+  {
+    "name": "accountant-copy-reminder",
+    "title": "^QuickBooks Information$",
+    "body": "Accountant's Copy",
+    "button": "^OK$",
+    "description": "Reminder that an Accountant's Copy is outstanding."
+  }
+]
+```
+
+`title`, `body` and `button` are case-insensitive regular expressions; `body` is
+optional and tells apart two dialogs that share a title. A rule reusing a built-in
+name replaces it, so `{"name": "update-available", ..., "enabled": false}` turns that
+built-in off. The file is read at startup; a malformed one is reported as `rules_error`
+on `GET /api/v1/dialogs` (the built-in rules stay in effect) rather than being ignored.
+
+**The bridge must run at the same Windows integrity level as QuickBooks.** If QB runs
+elevated and the bridge doesn't, Windows refuses the click (access denied) and the
+watcher reports it. The `install_task.py` scheduled task already requests
+`RunLevel HighestAvailable`.
 
 ## Authentication
 
@@ -226,6 +269,9 @@ All settings are configurable via environment variables (prefix `QBB_`):
 | `QBB_IDLE_TIMEOUT` | `120` | Seconds before releasing the QB COM session |
 | `QBB_AUTO_LAUNCH_QB` | `false` | Start QuickBooks Desktop automatically if not running |
 | `QBB_REQUEST_TIMEOUT` | `60` | Seconds before a QB request times out |
+| `QBB_DIALOG_WATCH` | `true` | Auto-dismiss recognized QuickBooks dialogs |
+| `QBB_DIALOG_POLL_INTERVAL` | `5` | Seconds between dialog scans |
+| `QBB_DIALOG_RULES_FILE` | `<data dir>\dialog_rules.json` | Extra dialog rules (JSON) |
 | `QBB_LOG_LEVEL` | `INFO` | Logging level |
 
 ## Running as a background service

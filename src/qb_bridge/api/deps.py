@@ -8,6 +8,7 @@ from fastapi.security import APIKeyHeader
 
 from qb_bridge.auth.api_keys import validate_key
 from qb_bridge.auth.permissions import check_permission
+from qb_bridge.qb.dialogs import DialogWatcher
 from qb_bridge.qb.session import QBSessionManager
 
 _api_key_header = APIKeyHeader(
@@ -26,6 +27,11 @@ def get_db(request: Request) -> aiosqlite.Connection:
 def get_qb_session(request: Request) -> QBSessionManager:
     """Get the QBSessionManager from app state."""
     return request.app.state.qb_session
+
+
+def get_dialog_watcher(request: Request) -> DialogWatcher:
+    """Get the QuickBooks DialogWatcher from app state."""
+    return request.app.state.dialog_watcher
 
 
 async def require_api_key(

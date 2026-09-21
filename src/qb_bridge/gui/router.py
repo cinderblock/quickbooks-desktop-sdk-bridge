@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -13,9 +14,11 @@ from fastapi.templating import Jinja2Templates
 from itsdangerous import URLSafeTimedSerializer
 
 from qb_bridge import __version__
-from qb_bridge.api.deps import get_db, get_qb_session
+from qb_bridge.api.deps import get_db, get_dialog_watcher, get_qb_session
 from qb_bridge.auth.api_keys import create_key, list_keys, revoke_key
+from qb_bridge.config import get_settings
 from qb_bridge.database import get_setting, set_setting
+from qb_bridge.qb.dialogs import DialogError, DialogWatcher, find_dialogs
 from qb_bridge.qb.process import is_qb_running
 from qb_bridge.qb.session import QBSessionManager
 
@@ -184,6 +187,101 @@ async def revoke_api_key(
 
     await revoke_key(db, key_id)
     return RedirectResponse("/gui/api-keys", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# QuickBooks dialogs
+# ---------------------------------------------------------------------------
+
+
+async def _dialogs_page(
+    request: Request,
+    watcher: DialogWatcher,
+    *,
+    message: str = "",
+    error: str = "",
+) -> HTMLResponse:
+    """Render the dialog page from a fresh scan of QuickBooks' windows.
+
+    The scan is a blocking Win32 enumeration, so it runs in a thread rather
+    than stalling the event loop while QuickBooks answers.
+    """
+    dialogs: list[dict] = []
+    try:
+        for dialog in await asyncio.to_thread(find_dialogs):
+            entry = dialog.as_dict()
+            matched = watcher.match(dialog)
+            entry["rule"] = matched[0].name if matched else None
+            entry["auto_dismiss_button"] = matched[1].label if matched else None
+            dialogs.append(entry)
+    except DialogError as exc:
+        error = error or f"Could not scan for QuickBooks dialogs: {exc}"
+
+    return templates.TemplateResponse(
+        "dialogs.html",
+        {
+            "request": request,
+            "dialogs": dialogs,
+            "events": [e.as_dict() for e in watcher.events],
+            "watcher": watcher.status(),
+            "rules_file": get_settings().dialog_rules_file,
+            "message": message,
+            "error": error,
+        },
+    )
+
+
+@gui_router.get("/dialogs", response_class=HTMLResponse)
+async def dialogs_page(
+    request: Request,
+    watcher: DialogWatcher = Depends(get_dialog_watcher),
+):
+    if not _check_session(request):
+        return RedirectResponse("/gui/login", status_code=303)
+    return await _dialogs_page(request, watcher)
+
+
+@gui_router.post("/dialogs/dismiss", response_class=HTMLResponse)
+async def dismiss_dialog(
+    request: Request,
+    hwnd: int = Form(...),
+    button: str = Form(...),
+    watcher: DialogWatcher = Depends(get_dialog_watcher),
+):
+    if not _check_session(request):
+        return RedirectResponse("/gui/login", status_code=303)
+
+    try:
+        found = await asyncio.to_thread(find_dialogs)
+        dialog = next((d for d in found if d.hwnd == hwnd), None)
+    except DialogError as exc:
+        return await _dialogs_page(request, watcher, error=str(exc))
+
+    if dialog is None:
+        return await _dialogs_page(
+            request,
+            watcher,
+            error="That dialog is no longer open — it may have been dismissed already.",
+        )
+
+    target = dialog.button(button)
+    if target is None:
+        return await _dialogs_page(
+            request,
+            watcher,
+            error=f"{dialog.title!r} has no button labelled {button!r}.",
+        )
+
+    event = await asyncio.to_thread(watcher.dismiss, dialog, target)
+    if event.action == "dismissed":
+        return await _dialogs_page(
+            request, watcher, message=f"Clicked {button!r} on {dialog.title!r}."
+        )
+    return await _dialogs_page(
+        request,
+        watcher,
+        error=f"Clicked {button!r} on {dialog.title!r} but it did not close: {event.detail}",
+    )
 
 
 # ---------------------------------------------------------------------------

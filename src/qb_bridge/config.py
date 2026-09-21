@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     # longer than a CRUD call, so they get their own, larger timeout.
     report_timeout: float = 180.0
 
+    # QuickBooks dialogs — QB blocks on its own modal dialogs (failed backup,
+    # update reminder), which hangs every request until someone clicks them.
+    dialog_watch: bool = True
+    dialog_poll_interval: float = 5.0
+    dialog_rules_file: Path | None = None  # derived from data_dir if not set
+
     model_config = {"env_prefix": "QBB_"}
 
     def model_post_init(self, __context) -> None:
@@ -39,6 +45,8 @@ class Settings(BaseSettings):
             self.db_path = self.data_dir / "qbbridge.db"
         if self.log_dir is None:
             self.log_dir = self.data_dir / "logs"
+        if self.dialog_rules_file is None:
+            self.dialog_rules_file = self.data_dir / "dialog_rules.json"
 
 
 def get_settings() -> Settings:
