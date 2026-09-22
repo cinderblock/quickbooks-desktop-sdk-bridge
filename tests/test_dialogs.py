@@ -402,3 +402,13 @@ class TestNeedsHuman:
 
         assert event.action == "needs_human"
         assert "Integrated Applications" in event.detail
+
+
+class TestProcessMatching:
+    def test_quickbooks_itself_is_matched(self):
+        assert any("qbw32pro".startswith(p) for p in dialogs_mod.QB_PROCESS_PREFIXES)
+        assert any("qbw32".startswith(p) for p in dialogs_mod.QB_PROCESS_PREFIXES)
+
+    def test_web_connector_is_not_quickbooks(self):
+        """qbwebconnector has its own window; it does not block the company file."""
+        assert not any("qbwebconnector".startswith(p) for p in dialogs_mod.QB_PROCESS_PREFIXES)

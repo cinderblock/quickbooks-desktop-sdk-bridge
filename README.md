@@ -234,6 +234,16 @@ as the `qb-not-started` remedy when `BeginSession` reports it could not start Qu
 A dialog only a person can answer (the login prompt, "No Company Open") is reported as
 `needs_human` with what to do about it, rather than as an anonymous unrecognized dialog.
 
+With that in place a request against a closed QuickBooks just works — it takes ~15-25s
+while QuickBooks starts, then runs at normal speed.
+
+`QBB_AUTO_CLOSE_QB` closes QuickBooks again once the bridge has been idle for
+`idle_timeout` seconds, so the machine isn't left holding the company file. It only does
+so when QuickBooks has **no windows on screen**: the idle timer measures the bridge's
+inactivity, not a person's, and closing QuickBooks is a force-kill. A QuickBooks the SDK
+started runs with no UI; one somebody is working in has a main window, and is left
+alone.
+
 **The bridge must run at the same Windows integrity level as QuickBooks.** If QB runs
 elevated and the bridge doesn't, Windows refuses the click (access denied) and the
 watcher reports it. The `install_task.py` scheduled task already requests

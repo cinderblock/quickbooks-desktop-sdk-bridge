@@ -305,10 +305,26 @@ class QBSessionManager:
                 log.info("QB worker stopped due to idle timeout — company file released")
 
             if self.auto_close_qb:
+                from .dialogs import DialogError, qb_has_visible_windows
                 from .process import close_qb
 
-                log.info("auto_close_qb=True — closing QuickBooks Desktop")
-                close_qb()
+                # The idle timer measures *our* inactivity, not a person's. A
+                # QuickBooks with windows on screen is one somebody may be
+                # working in, and closing it is a force-kill — so leave it be.
+                try:
+                    in_use = qb_has_visible_windows()
+                except DialogError as exc:
+                    log.warning("auto_close_qb: could not check for QB windows: %s", exc)
+                    in_use = True
+
+                if in_use:
+                    log.info(
+                        "auto_close_qb=True but QuickBooks has windows on screen — "
+                        "leaving it alone, someone may be using it"
+                    )
+                else:
+                    log.info("auto_close_qb=True and QuickBooks has no UI — closing it")
+                    close_qb()
 
     async def _start_worker(self) -> None:
         """Launch the COM worker subprocess.

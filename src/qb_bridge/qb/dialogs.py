@@ -34,7 +34,10 @@ log = logging.getLogger(__name__)
 # Process image names (lower-cased, extension stripped) whose windows we look
 # at.  QuickBooks 2021 runs as QBW32Pro.exe -> "qbw32pro"; the updater is
 # qbupdate.exe.  Anything else on the desktop is none of our business.
-QB_PROCESS_PREFIXES: tuple[str, ...] = ("qbw", "qbupdate", "quickbooks")
+#
+# Deliberately not a bare "qbw" prefix: that also matches qbwebconnector, whose
+# window would then count as a QuickBooks dialog blocking the company file.
+QB_PROCESS_PREFIXES: tuple[str, ...] = ("qbw32", "qbupdate", "quickbooks")
 
 # Win32 constants
 _BM_CLICK = 0x00F5
@@ -510,6 +513,40 @@ _UIPI_HINT = (
     "task uses RunLevel HighestAvailable, so install it with install_task.py from an "
     "Administrator prompt) or start QuickBooks without 'Run as administrator'."
 )
+
+
+def qb_has_visible_windows(process_prefixes: Sequence[str] = QB_PROCESS_PREFIXES) -> bool:
+    """True if QuickBooks is showing anything on screen.
+
+    A QuickBooks the SDK started for us runs with no UI at all, while one a
+    person is working in has a main window. That difference is what makes it
+    safe to close an idle QuickBooks automatically: no windows, nobody there.
+    """
+    import ctypes
+    import ctypes.wintypes as wt
+
+    user32, kernel32 = _win32()
+    enum_proc = ctypes.WINFUNCTYPE(ctypes.c_bool, wt.HWND, wt.LPARAM)
+
+    pid_names: dict[int, str] = {}
+    found = False
+
+    def on_window(hwnd, _lparam):
+        nonlocal found
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        pid = wt.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value not in pid_names:
+            pid_names[pid.value] = _process_name(kernel32, pid.value)
+        process = pid_names[pid.value]
+        if any(process.startswith(prefix) for prefix in process_prefixes):
+            found = True
+            return False  # stop enumerating
+        return True
+
+    user32.EnumWindows(enum_proc(on_window), 0)
+    return found
 
 
 def click_button(dialog: Dialog, button: DialogButton, timeout: float = 5.0) -> bool:
