@@ -6,7 +6,7 @@ from fastapi import APIRouter
 
 from qb_bridge.qb.entities import ENTITIES
 
-from .routes import company, dialogs, discovery, reports, status
+from .routes import company, connection, dialogs, discovery, reports, status
 from .routes.crud import make_crud_router
 
 
@@ -20,6 +20,9 @@ def build_api_router() -> APIRouter:
     # Status & company
     root.include_router(status.router)
     root.include_router(company.router)
+
+    # Connection warm-up
+    root.include_router(connection.router)
 
     # QuickBooks dialog watcher
     root.include_router(dialogs.router)

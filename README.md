@@ -182,6 +182,7 @@ reports). Passing it to a report without one (e.g. `balance-sheet`) returns an e
 | `GET` | `/api/v1/dialogs` | Yes | QuickBooks dialogs open right now, and the rule that would dismiss each |
 | `GET` | `/api/v1/dialogs/events` | Yes | What the dialog watcher has dismissed, failed on, or not recognized |
 | `POST` | `/api/v1/dialogs/{hwnd}/dismiss` | Yes | Click a button on an open dialog (`?button=OK`) |
+| `POST` | `/api/v1/connection/warm` | Yes | Open the QB session now so the next request is fast (`?wait=false` to return at once) |
 
 ## QuickBooks dialogs
 
@@ -248,6 +249,33 @@ alone.
 elevated and the bridge doesn't, Windows refuses the click (access denied) and the
 watcher reports it. The `install_task.py` scheduled task already requests
 `RunLevel HighestAvailable`.
+
+## Warming the connection
+
+Opening a QuickBooks session is the slow part of a request — from cold, QuickBooks has
+to start first (~15-25s). `POST /api/v1/connection/warm` pays that cost when *you* choose
+to, so the request that matters doesn't:
+
+```sh
+# Block until QuickBooks is live, then run your real work
+curl -X POST -H "X-API-Key: $KEY" http://localhost:8743/api/v1/connection/warm
+
+# Or kick it off and carry on — returns 202 immediately
+curl -X POST -H "X-API-Key: $KEY" "http://localhost:8743/api/v1/connection/warm?wait=false"
+```
+
+```json
+{"ok": true, "data": {
+  "state": "connected", "already_warm": false, "started_quickbooks": true,
+  "elapsed_seconds": 16.4, "stays_warm_for_seconds": 600,
+  "quickbooks": {"product": "QuickBooks Desktop Pro 2021", "version": "31", ...}
+}}
+```
+
+It runs a real `HostQueryRq` round-trip, so a success means the whole path works — not
+just that a process is running. Each call also resets the idle timer: call it inside
+`stays_warm_for_seconds` (your `idle_timeout`) to keep QuickBooks open and every request
+fast. A read-only key can warm the connection; it touches no company data.
 
 ## Failure handling
 

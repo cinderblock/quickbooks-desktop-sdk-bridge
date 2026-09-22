@@ -41,6 +41,8 @@ class FakeQBSession:
         self.last_idempotent: bool | None = None
         # Matches the production default so report calls can assert on it.
         self.report_timeout: float = 180.0
+        # How long a warmed connection stays open, as /connection/warm reports it.
+        self.idle_timeout: int = 600
 
     @property
     def state(self) -> str:
