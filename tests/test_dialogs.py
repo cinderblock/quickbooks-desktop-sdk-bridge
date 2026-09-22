@@ -375,3 +375,30 @@ class TestButtonDetection:
         assert not _is_button("Static")
         assert not _is_button("Edit")
         assert not _is_button("MauiForm")
+
+
+class TestNeedsHuman:
+    """Some blockers can't be clicked away — say what to do instead."""
+
+    def test_login_prompt_explains_the_unattended_fix(self):
+        dialog = make_dialog("QuickBooks Desktop Login", "Cameron", ("OK", "Cancel"))
+        guidance = dialogs_mod.needs_human(dialog)
+        assert guidance and "log in automatically" in guidance
+
+    def test_ordinary_dialog_has_no_special_guidance(self):
+        assert dialogs_mod.needs_human(make_dialog("QuickBooks Backup")) is None
+
+    def test_sweep_reports_needs_human_rather_than_unrecognized(self, monkeypatch):
+        dialog = make_dialog("QuickBooks Desktop Login", "Cameron", ("OK", "Cancel"))
+        monkeypatch.setattr(dialogs_mod, "find_dialogs", lambda *a, **k: [dialog])
+        monkeypatch.setattr(
+            dialogs_mod,
+            "click_button",
+            lambda *a, **k: pytest.fail("a login prompt must never be clicked"),
+        )
+
+        watcher = DialogWatcher(enabled=False)
+        (event,) = watcher.sweep()
+
+        assert event.action == "needs_human"
+        assert "Integrated Applications" in event.detail

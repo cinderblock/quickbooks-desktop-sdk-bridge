@@ -48,7 +48,7 @@ class QBSessionManager:
         report_timeout: float = 180.0,
         max_attempts: int = 3,
         retry_backoff: float = 2.0,
-        on_blocked: Callable[[], Awaitable[None]] | None = None,
+        on_blocked: Callable[[], Awaitable[list[str] | None]] | None = None,
     ) -> None:
         self.company_file = company_file
         self.idle_timeout = idle_timeout
@@ -60,8 +60,10 @@ class QBSessionManager:
         self.max_attempts = max(1, max_attempts)
         self.retry_backoff = retry_backoff
         # Called before retrying a request QuickBooks refused because a modal
-        # dialog was up; wired to the dialog watcher's sweep in main.py.
+        # dialog was up; wired to the dialog watcher's sweep in main.py. Returns
+        # the titles of any dialogs it could not dismiss.
         self.on_blocked = on_blocked
+        self._blocking_dialogs: list[str] = []
 
         self.retry_count = 0
         self.last_fault: str | None = None
@@ -145,8 +147,18 @@ class QBSessionManager:
                     raise
 
                 if attempt >= self.max_attempts:
+                    # A dialog we can't dismiss is the useful thing to say:
+                    # "QuickBooks is waiting on a login prompt" beats "try again".
+                    blocked_by = ""
+                    if self._blocking_dialogs:
+                        blocked_by = (
+                            " QuickBooks is waiting on a dialog nobody here can answer: "
+                            f"{', '.join(repr(t) for t in self._blocking_dialogs)}. "
+                            "Someone needs to deal with it on the QuickBooks machine."
+                        )
                     raise QBUnavailableError(
-                        f"{exc} (still failing after {attempt} attempts; {fault.description})",
+                        f"{exc} (still failing after {attempt} attempts; "
+                        f"{fault.description}){blocked_by}",
                         fault=fault.name,
                         attempts=attempt,
                         retry_after=max(5, int(self.retry_backoff * 2)),
@@ -169,7 +181,7 @@ class QBSessionManager:
     async def _apply_remedy(self, fault: TransientFault) -> None:
         """Do the thing that makes the next attempt worth making."""
         if fault.remedy == REMEDY_DISMISS_DIALOGS and self.on_blocked is not None:
-            await self.on_blocked()
+            self._blocking_dialogs = await self.on_blocked() or []
         elif fault.remedy == REMEDY_LAUNCH_QB:
             from .process import is_qb_running, launch_qb
 
@@ -299,21 +311,16 @@ class QBSessionManager:
                 close_qb()
 
     async def _start_worker(self) -> None:
-        """Launch the COM worker subprocess."""
+        """Launch the COM worker subprocess.
+
+        Deliberately does *not* start QuickBooks itself. The SDK can start it
+        headlessly when the app is authorized to log in automatically, and that
+        path needs no password; starting the GUI first pre-empts it and, on a
+        company file with a user password, parks QuickBooks on a login prompt
+        that no amount of retrying can clear. So we let BeginSession try, and
+        only fall back to launching the GUI as the ``qb-not-started`` remedy.
+        """
         await self._kill_worker()
-
-        # Auto-launch QB Desktop if configured and not running
-        if self.auto_launch_qb:
-            from .process import is_qb_running, launch_qb
-
-            if not is_qb_running():
-                log.info("QuickBooks is not running — launching now")
-                launch_qb(
-                    company_file=self.company_file or None,
-                    exe_path=self.qb_exe_path,
-                )
-                # Give QB time to initialise before we try to connect
-                await asyncio.sleep(8)
 
         # Always use python.exe (not pythonw.exe) for the worker — it needs
         # working stdin/stdout pipes for our JSON protocol

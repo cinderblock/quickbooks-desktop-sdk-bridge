@@ -135,10 +135,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         # When QuickBooks refuses a request because a dialog is up, sweep now
         # rather than waiting out the poll interval, then retry.
-        async def _sweep_dialogs() -> None:
+        async def _sweep_dialogs() -> list[str]:
             import asyncio as _asyncio
 
             await _asyncio.to_thread(dialog_watcher.sweep)
+            # Whatever is still up with no rule to clear it needs a person —
+            # name it in the error rather than telling the caller to retry.
+            return [d.title for d in dialog_watcher.open_dialogs if dialog_watcher.match(d) is None]
 
         qb_session.on_blocked = _sweep_dialogs
 

@@ -223,6 +223,34 @@ BUILTIN_RULES: tuple[DialogRule, ...] = (
 )
 
 
+# Dialogs that are blocking QuickBooks and that *only a person* can answer.
+# These are never clicked — the point is to say what is wrong and what fixes it,
+# instead of reporting a generic "unrecognized dialog".
+NEEDS_HUMAN: tuple[tuple[str, str], ...] = (
+    (
+        r"^QuickBooks (Desktop )?Login$|Enter the password|You must log in",
+        "QuickBooks wants a user password. Log in on the QuickBooks machine, or — so "
+        "this stops happening — authorize the bridge to log in by itself: in QuickBooks, "
+        "as Admin in single-user mode, Edit > Preferences > Integrated Applications > "
+        "Company Preferences > 'QuickBooks Bridge API' > Properties > Access Rights, "
+        "tick 'Allow this application to log in automatically' and pick a QuickBooks user.",
+    ),
+    (
+        r"^No Company Open$|Open a Company",
+        "QuickBooks is running with no company file open. Open the company file on the "
+        "QuickBooks machine.",
+    ),
+)
+
+
+def needs_human(dialog: Dialog) -> str | None:
+    """Why a dialog needs a person, if it is one of the known blockers."""
+    for pattern, explanation in NEEDS_HUMAN:
+        if re.search(pattern, dialog.title, re.IGNORECASE):
+            return explanation
+    return None
+
+
 _ALLOWED_RULE_KEYS = {"name", "title", "button", "body", "description", "enabled"}
 
 
@@ -547,7 +575,7 @@ class DialogEvent:
     """Something the watcher did — or refused to do — about a dialog."""
 
     timestamp: float
-    action: str  # "dismissed" | "unrecognized" | "failed"
+    action: str  # "dismissed" | "unrecognized" | "needs_human" | "failed"
     title: str
     text: str
     rule: str | None = None
@@ -772,19 +800,28 @@ class DialogWatcher:
             return None
         self._warned[signature] = now
 
-        log.warning(
-            "Unrecognized QuickBooks dialog is open and may be blocking requests — "
-            "title=%r buttons=%s text=%r",
-            dialog.title,
-            [b.label for b in dialog.buttons],
-            dialog.text,
-        )
+        explanation = needs_human(dialog)
+        if explanation:
+            log.warning(
+                "QuickBooks is blocked on %r, which needs a person: %s",
+                dialog.title,
+                explanation,
+            )
+        else:
+            log.warning(
+                "Unrecognized QuickBooks dialog is open and may be blocking requests — "
+                "title=%r buttons=%s text=%r",
+                dialog.title,
+                [b.label for b in dialog.buttons],
+                dialog.text,
+            )
         event = DialogEvent(
             timestamp=time.time(),
-            action="unrecognized",
+            action="needs_human" if explanation else "unrecognized",
             title=dialog.title,
             text=dialog.text,
-            detail="no rule matches; add one to dialog_rules.json or dismiss it manually",
+            detail=explanation
+            or "no rule matches; add one to dialog_rules.json or dismiss it manually",
         )
         self.events.appendleft(event)
         return event

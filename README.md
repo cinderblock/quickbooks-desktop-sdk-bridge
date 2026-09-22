@@ -218,6 +218,22 @@ name replaces it, so `{"name": "update-available", ..., "enabled": false}` turns
 built-in off. The file is read at startup; a malformed one is reported as `rules_error`
 on `GET /api/v1/dialogs` (the built-in rules stay in effect) rather than being ignored.
 
+### Running with QuickBooks closed
+
+The SDK can start QuickBooks itself, with no password prompt, when the bridge is
+authorized to log in automatically. Set that up once, in QuickBooks, as **Admin** in
+**single-user mode**: Edit → Preferences → Integrated Applications → Company Preferences →
+select *QuickBooks Bridge API* → Properties → Access Rights → tick **"Allow this
+application to log in automatically"** and choose a QuickBooks user.
+
+The bridge deliberately does *not* start the QuickBooks GUI before trying: launching the
+GUI on a password-protected company file parks it on a login prompt that no retry can
+clear, and pre-empts the headless start. Launching the GUI is only a fallback, applied
+as the `qb-not-started` remedy when `BeginSession` reports it could not start QuickBooks.
+
+A dialog only a person can answer (the login prompt, "No Company Open") is reported as
+`needs_human` with what to do about it, rather than as an anonymous unrecognized dialog.
+
 **The bridge must run at the same Windows integrity level as QuickBooks.** If QB runs
 elevated and the bridge doesn't, Windows refuses the click (access denied) and the
 watcher reports it. The `install_task.py` scheduled task already requests

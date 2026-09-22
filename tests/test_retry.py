@@ -237,3 +237,29 @@ class TestRouteRetrySafety:
         assert body["error"]["code"] == "QB_UNAVAILABLE"
         assert body["error"]["fault"] == "modal-dialog"
         assert body["error"]["attempts"] == 3
+
+
+class TestStartupOrder:
+    async def test_worker_start_does_not_preempt_the_sdk_by_launching_the_gui(self, monkeypatch):
+        """Launching the QB GUI first parks it on a login prompt nothing can clear.
+
+        The SDK can start QuickBooks headlessly when the app is authorized to
+        log in automatically, so BeginSession must get first refusal.
+        """
+        launched = []
+        monkeypatch.setattr("qb_bridge.qb.process.is_qb_running", lambda: False)
+        monkeypatch.setattr(
+            "qb_bridge.qb.process.launch_qb",
+            lambda **kw: launched.append(kw) or True,
+        )
+
+        def no_spawn(*args, **kwargs):
+            raise OSError("subprocess spawning is stubbed out in tests")
+
+        monkeypatch.setattr("qb_bridge.qb.session.subprocess.Popen", no_spawn)
+
+        session = QBSessionManager(auto_launch_qb=True)
+        with pytest.raises(OSError, match="stubbed out"):
+            await session._start_worker()
+
+        assert launched == [], "starting the worker must not launch the QuickBooks GUI"
