@@ -37,6 +37,8 @@ class FakeQBSession:
         self.requests: list[str] = []
         self.response_xml: str = _EMPTY_OK_RESPONSE
         self.last_timeout: float | None = None
+        # Whether the route told the session this request is safe to repeat.
+        self.last_idempotent: bool | None = None
         # Matches the production default so report calls can assert on it.
         self.report_timeout: float = 180.0
 
@@ -54,10 +56,13 @@ class FakeQBSession:
     async def stop(self) -> None:  # noqa: D102
         pass
 
-    async def execute(self, qbxml: str, timeout: float | None = None) -> str:
-        """Record the request (and its timeout) and return the canned response."""
+    async def execute(
+        self, qbxml: str, timeout: float | None = None, *, idempotent: bool = False
+    ) -> str:
+        """Record the request (and its timeout/retry-safety) and return the canned response."""
         self.last_request_xml = qbxml
         self.last_timeout = timeout
+        self.last_idempotent = idempotent
         self.requests.append(qbxml)
         return self.response_xml
 

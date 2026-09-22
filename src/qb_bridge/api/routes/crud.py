@@ -212,7 +212,7 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
                 iterator=iterator,
                 iterator_id=iter_id,
             )
-            response_xml = await session.execute(request_xml)
+            response_xml = await session.execute(request_xml, idempotent=True)
             resp = xml_parser.parse_response(response_xml)
 
             items = []
@@ -245,7 +245,7 @@ def make_crud_router(entity: EntityDef) -> APIRouter:
                 filters=filters,
                 include_line_items=ent_has_line_items,
             )
-            response_xml = await session.execute(request_xml)
+            response_xml = await session.execute(request_xml, idempotent=True)
             item = xml_parser.parse_single_entity(response_xml, ent_name)
             if item is None:
                 raise HTTPException(

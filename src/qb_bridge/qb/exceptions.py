@@ -39,3 +39,25 @@ class QBNotRunningError(QBError):
 
 class QBTimeoutError(QBError):
     """A QuickBooks operation timed out."""
+
+
+class QBUnavailableError(QBError):
+    """A recognized transient fault that outlived its retries.
+
+    Distinct from the other errors because the request was *not* rejected —
+    QuickBooks was briefly unable to serve it — so the caller should try again
+    rather than change the request. Surfaces as 503 + Retry-After.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        fault: str | None = None,
+        attempts: int = 1,
+        retry_after: int = 10,
+    ):
+        super().__init__(message)
+        self.fault = fault
+        self.attempts = attempts
+        self.retry_after = retry_after

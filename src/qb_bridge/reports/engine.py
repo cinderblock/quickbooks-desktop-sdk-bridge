@@ -26,5 +26,5 @@ async def run_report(
     """
     request_xml = xml_builder.build_request(request_type, body)
     report_timeout = getattr(session, "report_timeout", None)
-    response_xml = await session.execute(request_xml, timeout=report_timeout)
+    response_xml = await session.execute(request_xml, timeout=report_timeout, idempotent=True)
     return xml_parser.parse_report(response_xml)

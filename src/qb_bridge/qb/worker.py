@@ -6,7 +6,7 @@ and returning responses on stdout. Each line is a JSON message.
 Protocol:
   -> {"cmd": "execute", "qbxml": "..."}
   <- {"status": "ok", "response": "..."}
-  <- {"status": "error", "message": "..."}
+  <- {"status": "error", "phase": "connect"|"request", "message": "..."}
 
   -> {"cmd": "ping"}
   <- {"status": "ok", "connected": true|false}
@@ -66,14 +66,20 @@ def main() -> None:
             break
 
         if cmd == "execute":
+            # Which phase failed decides whether a retry is safe: a failure in
+            # "connect" means QuickBooks never saw the request, so even a write
+            # can be sent again. Once we are in "request", QuickBooks may have
+            # applied it, and only the caller knows if repeating is safe.
+            phase = "connect"
             try:
                 if not conn.session_open:
                     conn.connect(company_file)
+                phase = "request"
                 response = conn.process_request(msg.get("qbxml", ""))
                 _respond({"status": "ok", "response": response})
             except Exception as exc:
                 conn.disconnect()
-                _respond({"status": "error", "message": str(exc)})
+                _respond({"status": "error", "phase": phase, "message": str(exc)})
 
         elif cmd == "ping":
             _respond({"status": "ok", "connected": conn.session_open})

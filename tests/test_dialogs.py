@@ -18,6 +18,7 @@ from qb_bridge.qb.dialogs import (
     DialogRule,
     DialogRuleError,
     DialogWatcher,
+    _is_button,
     load_rules,
     rules_from_data,
 )
@@ -358,3 +359,19 @@ class TestBookkeeping:
         open_dialogs.clear()
         watcher.sweep()
         assert not watcher._warned
+
+
+class TestButtonDetection:
+    """QuickBooks draws most of its dialogs with its own toolkit."""
+
+    def test_win32_and_maui_buttons_both_count(self):
+        # Seen live: the QuickBooks Desktop Login dialog is a MauiForm whose
+        # OK/Cancel are MauiPushButton, not Button.
+        assert _is_button("Button")
+        assert _is_button("MauiPushButton")
+        assert _is_button("mauipushbutton")
+
+    def test_non_buttons_are_not_buttons(self):
+        assert not _is_button("Static")
+        assert not _is_button("Edit")
+        assert not _is_button("MauiForm")

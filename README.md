@@ -223,6 +223,33 @@ elevated and the bridge doesn't, Windows refuses the click (access denied) and t
 watcher reports it. The `install_task.py` scheduled task already requests
 `RunLevel HighestAvailable`.
 
+## Failure handling
+
+QuickBooks Desktop is a desktop app, not a server: it gets closed, blocked on a dialog,
+or is busy when a request arrives. The bridge retries a failure only when it **recognizes**
+it as transient, and applies a remedy first so the next attempt has a reason to succeed:
+
+| Fault | Recognized by | Remedy before retry |
+|-------|---------------|---------------------|
+| QB blocked on a modal dialog | `modal dialog box is showing` | Sweep dialogs immediately (don't wait for the next poll) |
+| QuickBooks is closed | `Could not start QuickBooks` | Launch it, if `auto_launch_qb` is on |
+| COM worker died | `Worker process died` / pipe broken | Respawn the worker |
+| QuickBooks busy | `call was rejected by callee` | Back off |
+
+Anything else — a qbXML parse error, a stale `EditSequence`, an invalid `iteratorID` —
+is **never** retried: repeating it would fail identically, so you get the real error at once.
+
+**Writes are not blindly retried.** Queries and reports are marked safe to repeat. A
+write is retried only when QuickBooks provably never saw it (the session failed to open,
+or the pipe broke before the send — the COM worker reports which phase failed). Once a
+write is in flight, a failure is reported rather than repeated, because QuickBooks may
+have already applied it and a second attempt would duplicate the record. A timed-out
+request is likewise never auto-repeated.
+
+When retries run out, the response is `503` with a `Retry-After` header and
+`error.code = "QB_UNAVAILABLE"`, so callers know to back off rather than change the
+request. `/api/v1/status` reports `qb_retries` and `qb_last_fault`.
+
 ## Authentication
 
 Every `/api/v1/*` request requires an `X-API-Key` header.
@@ -258,7 +285,11 @@ Operations: `read` (list+get), `write` (create+update+delete), `insert` (create 
 
 ## Configuration
 
-All settings are configurable via environment variables (prefix `QBB_`):
+All settings are configurable via environment variables (prefix `QBB_`). Values saved on
+the GUI's **Connection** page are stored in the database and applied at startup; an
+environment variable wins over the stored value, and a stored value that can't be read
+is logged and skipped rather than silently ignored.
+
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -269,6 +300,8 @@ All settings are configurable via environment variables (prefix `QBB_`):
 | `QBB_IDLE_TIMEOUT` | `120` | Seconds before releasing the QB COM session |
 | `QBB_AUTO_LAUNCH_QB` | `false` | Start QuickBooks Desktop automatically if not running |
 | `QBB_REQUEST_TIMEOUT` | `60` | Seconds before a QB request times out |
+| `QBB_MAX_ATTEMPTS` | `3` | Attempts per request when a recognized transient fault hits (1 disables retrying) |
+| `QBB_RETRY_BACKOFF` | `2` | Seconds between attempts (multiplied by attempt number) |
 | `QBB_DIALOG_WATCH` | `true` | Auto-dismiss recognized QuickBooks dialogs |
 | `QBB_DIALOG_POLL_INTERVAL` | `5` | Seconds between dialog scans |
 | `QBB_DIALOG_RULES_FILE` | `<data dir>\dialog_rules.json` | Extra dialog rules (JSON) |

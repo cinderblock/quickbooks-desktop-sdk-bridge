@@ -14,9 +14,17 @@ import logging
 import subprocess
 import sys
 import time
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-from .exceptions import QBConnectionError, QBTimeoutError
+from .exceptions import QBConnectionError, QBError, QBTimeoutError, QBUnavailableError
+from .retry import (
+    REMEDY_DISMISS_DIALOGS,
+    REMEDY_LAUNCH_QB,
+    REMEDY_RESTART_WORKER,
+    TransientFault,
+    classify,
+)
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +46,9 @@ class QBSessionManager:
         auto_close_qb: bool = False,
         request_timeout: float = 90.0,
         report_timeout: float = 180.0,
+        max_attempts: int = 3,
+        retry_backoff: float = 2.0,
+        on_blocked: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self.company_file = company_file
         self.idle_timeout = idle_timeout
@@ -46,6 +57,14 @@ class QBSessionManager:
         self.auto_close_qb = auto_close_qb
         self.request_timeout = request_timeout
         self.report_timeout = report_timeout
+        self.max_attempts = max(1, max_attempts)
+        self.retry_backoff = retry_backoff
+        # Called before retrying a request QuickBooks refused because a modal
+        # dialog was up; wired to the dialog watcher's sweep in main.py.
+        self.on_blocked = on_blocked
+
+        self.retry_count = 0
+        self.last_fault: str | None = None
 
         self._proc: subprocess.Popen | None = None
         self._lock = asyncio.Lock()
@@ -79,15 +98,103 @@ class QBSessionManager:
         await self._kill_worker()
         log.info("QBSessionManager stopped")
 
-    async def execute(self, qbxml: str, timeout: float | None = None) -> str:
-        """Send a qbXML request to the worker subprocess.
+    async def execute(
+        self,
+        qbxml: str,
+        timeout: float | None = None,
+        *,
+        idempotent: bool = False,
+    ) -> str:
+        """Send a qbXML request to the worker subprocess, retrying transient faults.
 
         ``timeout`` overrides the default ``request_timeout`` for this one call
         (reports pass the larger ``report_timeout``).
+
+        ``idempotent`` says whether repeating this request is harmless — true
+        for queries and reports, false for anything that writes. A write is
+        still retried when QuickBooks provably never saw it (the session failed
+        to open, the pipe broke before the send); it is *not* retried once the
+        request was in flight, because QuickBooks may have applied it and a
+        second attempt would duplicate the record.
         """
         if not self._running:
             raise QBConnectionError("QBSessionManager is not running")
 
+        attempt = 1
+        while True:
+            try:
+                return await self._execute_once(qbxml, timeout)
+            except QBError as exc:
+                reached_qb = getattr(exc, "_reached_qb", True)
+                fault = classify(str(exc))
+
+                # Unrecognized: repeating it would just fail the same way.
+                if fault is None:
+                    raise
+
+                # Recognized, but the request may already have been applied and
+                # the caller hasn't said it's safe to repeat. Report the real
+                # error rather than inviting a retry that could duplicate data.
+                if reached_qb and not idempotent:
+                    log.warning(
+                        "Not retrying a non-idempotent request after a %r fault: "
+                        "QuickBooks may have applied it already (%s)",
+                        fault.name,
+                        exc,
+                    )
+                    raise
+
+                if attempt >= self.max_attempts:
+                    raise QBUnavailableError(
+                        f"{exc} (still failing after {attempt} attempts; {fault.description})",
+                        fault=fault.name,
+                        attempts=attempt,
+                        retry_after=max(5, int(self.retry_backoff * 2)),
+                    ) from exc
+
+                self.retry_count += 1
+                self.last_fault = fault.name
+                log.warning(
+                    "Attempt %d/%d failed with transient fault %r (%s) — applying remedy %r",
+                    attempt,
+                    self.max_attempts,
+                    fault.name,
+                    exc,
+                    fault.remedy,
+                )
+                await self._apply_remedy(fault)
+                await asyncio.sleep(self.retry_backoff * attempt)
+                attempt += 1
+
+    async def _apply_remedy(self, fault: TransientFault) -> None:
+        """Do the thing that makes the next attempt worth making."""
+        if fault.remedy == REMEDY_DISMISS_DIALOGS and self.on_blocked is not None:
+            await self.on_blocked()
+        elif fault.remedy == REMEDY_LAUNCH_QB:
+            from .process import is_qb_running, launch_qb
+
+            if is_qb_running():
+                return
+            if not self.auto_launch_qb:
+                log.warning(
+                    "QuickBooks is not running and auto_launch_qb is off — enable it on "
+                    "the Connection page (or set QBB_AUTO_LAUNCH_QB=true) to recover "
+                    "from this automatically"
+                )
+                return
+            log.info("Launching QuickBooks Desktop to recover from %r", fault.name)
+            launch_qb(company_file=self.company_file or None, exe_path=self.qb_exe_path)
+            await asyncio.sleep(8)
+        elif fault.remedy == REMEDY_RESTART_WORKER:
+            async with self._lock:
+                await self._kill_worker()
+
+    async def _execute_once(self, qbxml: str, timeout: float | None = None) -> str:
+        """One attempt: hand the request to the worker and read its answer.
+
+        Failures carry ``_reached_qb``: False means QuickBooks never saw the
+        request, so even a write can safely be sent again.
+        """
         effective_timeout = timeout if timeout is not None else self.request_timeout
 
         async with self._lock:
@@ -95,7 +202,12 @@ class QBSessionManager:
 
             # Ensure worker is alive
             if not self._proc or self._proc.poll() is not None:
-                await self._start_worker()
+                try:
+                    await self._start_worker()
+                except QBError as exc:
+                    # Nothing was sent, so this is safe to retry for writes too.
+                    exc._reached_qb = False
+                    raise
 
             # Send request
             msg = json.dumps({"cmd": "execute", "qbxml": qbxml}) + "\n"
@@ -105,7 +217,9 @@ class QBSessionManager:
             except (BrokenPipeError, OSError) as exc:
                 self._connection_state = "error"
                 await self._kill_worker()
-                raise QBConnectionError(f"Worker pipe broken: {exc}") from exc
+                error = QBConnectionError(f"Worker pipe broken: {exc}")
+                error._reached_qb = False
+                raise error from exc
 
             # Read response (with timeout)
             try:
@@ -139,7 +253,11 @@ class QBSessionManager:
                 error_msg = result.get("message", "Unknown worker error")
                 # Worker will retry connection on next request
                 self._connection_state = "error"
-                raise QBConnectionError(f"QB error: {error_msg}")
+                error = QBConnectionError(f"QB error: {error_msg}")
+                # The worker tells us which phase failed: "connect" means the
+                # session never opened, so QuickBooks never saw the request.
+                error._reached_qb = result.get("phase") != "connect"
+                raise error
 
     async def _idle_monitor(self) -> None:
         """Background task: disconnect QB after idle_timeout seconds of inactivity.

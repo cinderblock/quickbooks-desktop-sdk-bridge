@@ -23,7 +23,7 @@ async def get_company(
     _perm=Depends(require_permission("Company", "get")),
 ):
     request_xml = xml_builder.build_request("CompanyQueryRq")
-    response_xml = await session.execute(request_xml)
+    response_xml = await session.execute(request_xml, idempotent=True)
     data = xml_parser.parse_single_entity(response_xml, "Company")
     return {"ok": True, "data": data}
 
@@ -39,6 +39,6 @@ async def get_preferences(
     _perm=Depends(require_permission("Company", "get")),
 ):
     request_xml = xml_builder.build_request("PreferencesQueryRq")
-    response_xml = await session.execute(request_xml)
+    response_xml = await session.execute(request_xml, idempotent=True)
     data = xml_parser.parse_single_entity(response_xml, "Preferences")
     return {"ok": True, "data": data}

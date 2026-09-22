@@ -17,6 +17,7 @@ from qb_bridge.config import Settings, get_settings
 from qb_bridge.database import init_db
 from qb_bridge.qb.dialogs import DialogWatcher
 from qb_bridge.qb.session import QBSessionManager
+from qb_bridge.settings_store import apply_db_settings
 
 log = logging.getLogger("qb_bridge")
 
@@ -69,6 +70,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         """Startup / shutdown lifecycle."""
+        nonlocal settings
+
         # Ensure data dir exists
         settings.data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -76,11 +79,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         db = await init_db(settings.db_path)
         app.state.db = db
 
-        # Load company file path from DB (overrides env/default if set)
+        # Apply what the GUI's Connection page saved (auto_launch_qb, idle
+        # timeout, ...). Without this, only company_file_path was ever read
+        # back and every other saved choice silently did nothing.
         from qb_bridge.database import get_setting, set_setting
 
-        db_company_file = await get_setting(db, "company_file_path")
-        company_file = db_company_file or settings.company_file
+        settings = await apply_db_settings(db, settings)
+        app.state.settings = settings
+        company_file = settings.company_file
 
         # Ensure the GUI session secret is persisted in the DB.
         # If it was never set, generate a random one and save it so that
@@ -111,6 +117,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             auto_close_qb=settings.auto_close_qb,
             request_timeout=settings.request_timeout,
             report_timeout=settings.report_timeout,
+            max_attempts=settings.max_attempts,
+            retry_backoff=settings.retry_backoff,
         )
         await qb_session.start()
         app.state.qb_session = qb_session
@@ -124,6 +132,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         await dialog_watcher.start()
         app.state.dialog_watcher = dialog_watcher
+
+        # When QuickBooks refuses a request because a dialog is up, sweep now
+        # rather than waiting out the poll interval, then retry.
+        async def _sweep_dialogs() -> None:
+            import asyncio as _asyncio
+
+            await _asyncio.to_thread(dialog_watcher.sweep)
+
+        qb_session.on_blocked = _sweep_dialogs
 
         log.info(
             "QuickBooks Bridge v%s started on %s:%d",
@@ -172,11 +189,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Global exception handler for QB errors
     from fastapi.responses import JSONResponse
 
-    from qb_bridge.qb.exceptions import QBError
+    from qb_bridge.qb.exceptions import QBError, QBUnavailableError
 
     @app.exception_handler(QBError)
     async def qb_error_handler(request, exc: QBError):
         log.error("QB error: %s", exc, exc_info=True)
+        # A recognized transient fault that outlived its retries is not a bad
+        # request — QuickBooks was briefly unavailable. Say so with a 503 and a
+        # Retry-After so callers back off instead of rewriting the request.
+        if isinstance(exc, QBUnavailableError):
+            return JSONResponse(
+                status_code=503,
+                headers={"Retry-After": str(exc.retry_after)},
+                content={
+                    "ok": False,
+                    "error": {
+                        "code": "QB_UNAVAILABLE",
+                        "message": str(exc),
+                        "fault": exc.fault,
+                        "attempts": exc.attempts,
+                        "retry_after_seconds": exc.retry_after,
+                    },
+                },
+            )
         return JSONResponse(
             status_code=502,
             content={

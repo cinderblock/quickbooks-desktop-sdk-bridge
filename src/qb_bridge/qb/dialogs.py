@@ -48,7 +48,19 @@ _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 ERROR_ACCESS_DENIED = 5
 
 # Classes whose text is chrome, not message body
-_NON_BODY_CLASSES = frozenset({"Button", "ScrollBar", "ComboBox", "ListBox", "SysHeader32"})
+_NON_BODY_CLASSES = frozenset({"ScrollBar", "ComboBox", "ListBox", "SysHeader32"})
+
+
+def _is_button(window_class: str) -> bool:
+    """True for anything that behaves like a push button.
+
+    QuickBooks draws most of its own dialogs with its "Maui" toolkit, whose
+    buttons are ``MauiPushButton`` rather than the Win32 ``Button`` class —
+    without this, those dialogs come back with no buttons at all and no rule
+    could ever dismiss them.
+    """
+    lowered = window_class.lower()
+    return lowered == "button" or lowered.endswith("pushbutton")
 
 
 class DialogError(Exception):
@@ -418,7 +430,7 @@ def find_dialogs(process_prefixes: Sequence[str] = QB_PROCESS_PREFIXES) -> list[
         def on_child(child, _lp):
             child_class = _window_class(user32, child)
             text = _window_text(user32, child).strip()
-            if child_class == "Button":
+            if _is_button(child_class):
                 if text and user32.IsWindowVisible(child) and user32.IsWindowEnabled(child):
                     buttons.append(
                         DialogButton(

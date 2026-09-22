@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     # longer than a CRUD call, so they get their own, larger timeout.
     report_timeout: float = 180.0
 
+    # Retries — how hard to try again after a *recognized* transient fault
+    # (QB blocked on a dialog, QB closed, dead COM worker). Unrecognized
+    # errors are never retried.
+    max_attempts: int = 3
+    retry_backoff: float = 2.0
+
     # QuickBooks dialogs — QB blocks on its own modal dialogs (failed backup,
     # update reminder), which hangs every request until someone clicks them.
     dialog_watch: bool = True

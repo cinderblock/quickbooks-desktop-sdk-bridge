@@ -54,6 +54,11 @@ async def get_status(
             "qb_desktop_running": is_qb_running(),
             "qb_connection_state": session.state,
             "qb_idle_seconds": round(session.idle_seconds, 1),
+            # How often a recognized transient fault has been retried, and
+            # which one was seen last — a rising count means QuickBooks keeps
+            # needing rescue even though callers aren't seeing errors.
+            "qb_retries": getattr(session, "retry_count", 0),
+            "qb_last_fault": getattr(session, "last_fault", None),
             "qb_dialogs_open": len(open_dialogs),
             # Dialogs nothing knows how to dismiss — these are the ones
             # actually blocking QuickBooks until a human deals with them.
