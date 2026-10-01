@@ -245,10 +245,33 @@ inactivity, not a person's, and closing QuickBooks is a force-kill. A QuickBooks
 started runs with no UI; one somebody is working in has a main window, and is left
 alone.
 
-**The bridge must run at the same Windows integrity level as QuickBooks.** If QB runs
-elevated and the bridge doesn't, Windows refuses the click (access denied) and the
-watcher reports it. The `install_task.py` scheduled task already requests
-`RunLevel HighestAvailable`.
+**The bridge must run at the same Windows integrity level as QuickBooks**, which in
+practice means *not elevated*, because that is how people open QuickBooks. The
+`install_task.py` scheduled task requests `RunLevel LeastPrivilege` for this reason.
+
+- An **elevated bridge** only works while QuickBooks is closed. The SDK cannot join a
+  QuickBooks at a different level, so with someone working in QuickBooks every request
+  starts a second, elevated QuickBooks, which puts "Can't Open QuickBooks — QuickBooks
+  already has a company file open" on their screen and times the request out.
+- A **non-elevated bridge with an elevated QuickBooks** ("Run as administrator") has
+  the mirror problem, and Windows also refuses the dialog watcher's clicks (access
+  denied), which the watcher reports.
+
+A QuickBooks the SDK starts itself inherits the bridge's level, so after changing the
+bridge's level close any QuickBooks left running by the old one.
+
+### Which company file
+
+Set the company file's full path on the Connection page. The bridge passes it to
+QuickBooks when it opens a session, and QuickBooks refuses the session if a *different*
+company file is open. The bridge then asks QuickBooks which file the session is
+actually on and refuses to send anything unless it is the configured one ("Wrong
+company file …"). The comparison ignores case and slash direction; the same file
+reached by another route (a share instead of a local path) is refused, on purpose.
+
+With no path configured the bridge uses whichever company file QuickBooks has open,
+and says so in the log each time. Don't leave it that way on a machine that ever opens
+more than one.
 
 ## Warming the connection
 

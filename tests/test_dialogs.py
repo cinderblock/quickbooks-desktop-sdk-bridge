@@ -385,6 +385,16 @@ class TestNeedsHuman:
         guidance = dialogs_mod.needs_human(dialog)
         assert guidance and "log in automatically" in guidance
 
+    def test_a_second_quickbooks_is_explained_as_a_privilege_mismatch(self):
+        dialog = make_dialog(
+            "Can't Open QuickBooks",
+            "QuickBooks already has a company file open. If you want to open another "
+            "company file, close this one first.",
+            ("OK",),
+        )
+        guidance = dialogs_mod.needs_human(dialog)
+        assert guidance and "privilege levels" in guidance and "not elevated" in guidance
+
     def test_ordinary_dialog_has_no_special_guidance(self):
         assert dialogs_mod.needs_human(make_dialog("QuickBooks Backup")) is None
 

@@ -11,6 +11,7 @@ import logging
 import pythoncom
 import win32com.client
 
+from .company import same_company_file
 from .exceptions import QBConnectionError, QBRequestError, QBSessionError
 
 log = logging.getLogger(__name__)
@@ -18,7 +19,8 @@ log = logging.getLogger(__name__)
 APP_ID = "QBBridge"
 APP_NAME = "QuickBooks Bridge API"
 
-# qbFileOpenDoNotCare — use whatever company file QB has open
+# qbFileOpenDoNotCare — single- or multi-user, whichever QuickBooks is already
+# in. Which *file* is decided by the path given to BeginSession, not by this.
 QB_FILE_MODE_DO_NOT_CARE = 2
 
 
@@ -70,6 +72,45 @@ class QBConnection:
             desc = _com_error_desc(exc)
             self._close_connection()
             raise QBSessionError(f"BeginSession failed: {desc}") from exc
+
+        self._confirm_company_file(company_file)
+
+    def _confirm_company_file(self, expected: str) -> None:
+        """Refuse a session on any company file but the configured one.
+
+        QuickBooks already refuses to begin a session on a named file while a
+        different one is open, so this should never fire. It is here because
+        the cost of being wrong is records written into the wrong company's
+        books, and asking QuickBooks which file the session is on is cheap.
+        """
+        assert self._rp is not None and self._ticket is not None
+        try:
+            actual = str(self._rp.GetCurrentCompanyFileName(self._ticket))
+        except pythoncom.com_error as exc:
+            if not expected:
+                log.warning("Could not ask QuickBooks which company file is open: %s", exc)
+                return
+            self.disconnect()
+            raise QBSessionError(
+                "Could not confirm which company file QuickBooks has open "
+                f"({_com_error_desc(exc)}). Nothing was sent."
+            ) from exc
+
+        if not expected:
+            log.warning(
+                "No company file is configured: using the one QuickBooks has open (%s). "
+                "Set one on the Connection page to pin the bridge to it.",
+                actual,
+            )
+            return
+
+        if not same_company_file(actual, expected):
+            self.disconnect()
+            raise QBSessionError(
+                f"Wrong company file: QuickBooks has {actual!r} open, and the bridge is "
+                f"configured for {expected!r}. Nothing was sent."
+            )
+        log.info("Company file confirmed: %s", actual)
 
     def process_request(self, qbxml: str) -> str:
         """Send a qbXML request and return the raw XML response.

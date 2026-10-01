@@ -10,12 +10,13 @@
 
 {% if not watcher.enabled %}
 <article><strong>The dialog watcher is disabled.</strong> Set <code>QBB_DIALOG_WATCH=true</code> and restart to enable it.</article>
-{% elif not watcher.elevated %}
+{% elif watcher.elevated %}
 <article>
-    <strong>The bridge is not running elevated.</strong>
-    If QuickBooks runs as administrator, Windows will refuse these clicks.
-    Re-install the scheduled task from an Administrator prompt
-    (<code>python install_task.py</code>).
+    <strong>The bridge is running elevated.</strong>
+    It cannot join a QuickBooks that someone opened normally: the SDK starts a second
+    QuickBooks instead, which fails with "Can't Open QuickBooks" on their screen.
+    Re-install the scheduled task (<code>python install_task.py</code>), which runs the
+    bridge un-elevated.
 </article>
 {% endif %}
 {% if watcher.rules_error %}

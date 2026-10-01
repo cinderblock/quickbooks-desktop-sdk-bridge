@@ -103,7 +103,27 @@ time.sleep(2)
 # --- Create scheduled task via XML ---
 print("  [2/3] Creating scheduled task...")
 
-os.makedirs(r"C:\ProgramData\QBBridge\logs", exist_ok=True)
+DATA_DIR = r"C:\ProgramData\QBBridge"
+os.makedirs(os.path.join(DATA_DIR, "logs"), exist_ok=True)
+
+# The task runs un-elevated (see RunLevel below), but this installer is
+# elevated, and so was any bridge installed before that changed: what they
+# created under ProgramData belongs to Administrators, which the un-elevated
+# bridge can read but not write. Give the task's user the data directory.
+grant = _run(["icacls", DATA_DIR, "/grant", f"{username}:(OI)(CI)M", "/T", "/C", "/Q"])
+if grant is None or grant.returncode != 0:
+    detail = "" if grant is None else (grant.stderr.strip() or grant.stdout.strip())
+    print(f"  ERROR: could not give {username} write access to {DATA_DIR}: {detail}")
+    sys.exit(1)
+
+# RunLevel LeastPrivilege, deliberately. The SDK joins a running QuickBooks
+# only when both are at the same Windows integrity level, and people open
+# QuickBooks un-elevated. An elevated bridge (this used to say
+# HighestAvailable) works only while QuickBooks is closed: with someone in
+# QuickBooks, every request starts a second, elevated QuickBooks that fails
+# with "Can't Open QuickBooks — already has a company file open" on their
+# screen, and the request times out. A QuickBooks the SDK starts itself
+# inherits the bridge's level, so un-elevated is consistent in both cases.
 
 xml = f"""<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -118,7 +138,7 @@ xml = f"""<?xml version="1.0" encoding="UTF-16"?>
     <Principal>
       <UserId>{username}</UserId>
       <LogonType>InteractiveToken</LogonType>
-      <RunLevel>HighestAvailable</RunLevel>
+      <RunLevel>LeastPrivilege</RunLevel>
     </Principal>
   </Principals>
   <Settings>

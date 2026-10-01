@@ -239,6 +239,14 @@ NEEDS_HUMAN: tuple[tuple[str, str], ...] = (
         "tick 'Allow this application to log in automatically' and pick a QuickBooks user.",
     ),
     (
+        r"^Can.t Open QuickBooks$",
+        "A second QuickBooks was started while one is already open on the company file. "
+        "That happens when the bridge and the open QuickBooks run at different Windows "
+        "privilege levels: the SDK cannot join a QuickBooks it is not level with, so it "
+        "starts its own. Run the bridge at the level people run QuickBooks at — normally "
+        "not elevated, which is what install_task.py sets up — and dismiss this dialog.",
+    ),
+    (
         r"^No Company Open$|Open a Company",
         "QuickBooks is running with no company file open. Open the company file on the "
         "QuickBooks machine.",
@@ -509,9 +517,9 @@ def is_elevated() -> bool:
 
 _UIPI_HINT = (
     "Windows refused the click (access denied). QuickBooks is running at a higher "
-    "integrity level than the bridge — run the bridge elevated (the QBBridge scheduled "
-    "task uses RunLevel HighestAvailable, so install it with install_task.py from an "
-    "Administrator prompt) or start QuickBooks without 'Run as administrator'."
+    "integrity level than the bridge. Start QuickBooks without 'Run as administrator' "
+    "(the bridge runs un-elevated, the way people normally run QuickBooks), and close "
+    "any QuickBooks left over from an earlier, elevated bridge."
 )
 
 
@@ -898,9 +906,11 @@ class DialogWatcher:
         return {
             "enabled": self.enabled,
             "running": self._running,
-            # Clicking into an elevated QuickBooks from a non-elevated bridge
-            # is blocked by Windows, so this is the first thing to check when
-            # dismissals fail.
+            # The bridge has to be level with QuickBooks: an elevated bridge
+            # cannot join a QuickBooks a person opened normally (the SDK starts
+            # a second one instead), and a non-elevated bridge cannot click
+            # into an elevated QuickBooks. People run QuickBooks un-elevated,
+            # so True here is the first thing to check when either goes wrong.
             "elevated": is_elevated(),
             "poll_interval": self.poll_interval,
             "rules": [r.as_dict() for r in self.rules],
