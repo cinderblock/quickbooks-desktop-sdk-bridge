@@ -245,6 +245,13 @@ inactivity, not a person's, and closing QuickBooks is a force-kill. A QuickBooks
 started runs with no UI; one somebody is working in has a main window, and is left
 alone.
 
+**When someone has QuickBooks open, the bridge lets go of it within seconds.** An open
+SDK session stops a person closing QuickBooks, backing up, or switching company or
+user mode. So with QuickBooks windows on screen the session is released about 15
+seconds after the last request, rather than held for `idle_timeout`; joining their
+QuickBooks again for the next request takes a couple of seconds. A QuickBooks the
+bridge started for itself has nobody to hold up, and is kept for the full timeout.
+
 **The bridge must run at the same Windows integrity level as QuickBooks**, which in
 practice means *not elevated*, because that is how people open QuickBooks. The
 `install_task.py` scheduled task requests `RunLevel LeastPrivilege` for this reason.

@@ -49,9 +49,16 @@ class QBSessionManager:
         max_attempts: int = 3,
         retry_backoff: float = 2.0,
         on_blocked: Callable[[], Awaitable[list[str] | None]] | None = None,
+        attended_idle_timeout: int = 15,
     ) -> None:
         self.company_file = company_file
         self.idle_timeout = idle_timeout
+        # How long a session is kept once the requests stop, when a person has
+        # QuickBooks open. An open SDK session stops them closing QuickBooks,
+        # switching company or user mode, or backing up — so it is let go
+        # almost at once, where a QuickBooks the bridge started for itself is
+        # kept for `idle_timeout` to save starting it again. 0 turns this off.
+        self.attended_idle_timeout = attended_idle_timeout
         self.auto_launch_qb = auto_launch_qb
         self.qb_exe_path = qb_exe_path
         self.auto_close_qb = auto_close_qb
@@ -272,59 +279,96 @@ class QBSessionManager:
                 raise error
 
     async def _idle_monitor(self) -> None:
-        """Background task: disconnect QB after idle_timeout seconds of inactivity.
-
-        Sends a 'disconnect' command to the worker (ending the QB session but
-        keeping the subprocess alive for fast reconnect). If auto_close_qb is
-        set, also closes the QB Desktop process.
-        """
+        """Background task: let go of QuickBooks once the requests stop."""
         check_interval = min(60, max(10, self.idle_timeout // 6))
+        if self.attended_idle_timeout > 0:
+            check_interval = min(check_interval, 5)
         while self._running:
             await asyncio.sleep(check_interval)
             if not self._running:
                 break
+            await self._idle_check()
 
-            if self._last_activity == 0:
-                # No request has been made yet; nothing to time out.
-                continue
+    def _someone_is_using_qb(self) -> bool:
+        """Whether QuickBooks has windows on screen: a person's, not one the SDK started."""
+        from .dialogs import DialogError, qb_has_visible_windows
 
-            if self.idle_seconds < self.idle_timeout:
-                continue
+        try:
+            return qb_has_visible_windows()
+        except DialogError as exc:
+            log.debug("Could not check for QuickBooks windows: %s", exc)
+            return False
 
-            # We've been idle long enough — kill the worker subprocess so
-            # the OS reclaims all COM handles and releases the QB company
-            # file lock.  The worker will be re-spawned on the next request.
+    async def _idle_check(self) -> None:
+        """One look at how long it has been since the last request.
+
+        Idle for `idle_timeout`: stop the worker subprocess, so the OS reclaims
+        every COM handle and the company file is released (and, with
+        auto_close_qb, close a QuickBooks nobody is looking at). The worker is
+        started again by the next request.
+
+        Idle for only `attended_idle_timeout`, but with a person in QuickBooks:
+        the same release, early. While the bridge holds a session they cannot
+        close QuickBooks or change how the file is open, and joining their
+        QuickBooks again costs a couple of seconds, not a cold start.
+        """
+        if self._last_activity == 0 or self._proc is None:
+            # No request yet, or nothing held; nothing to time out.
+            return
+
+        idle = self.idle_seconds
+        if idle >= self.idle_timeout:
+            threshold = self.idle_timeout
+            attended = False
+        elif 0 < self.attended_idle_timeout <= idle and self._someone_is_using_qb():
+            threshold = self.attended_idle_timeout
+            attended = True
+        else:
+            return
+
+        async with self._lock:
+            # A request may have run while we waited for the lock.
+            if self._last_activity == 0 or self.idle_seconds < threshold:
+                return
+            if attended:
+                log.info(
+                    "Someone has QuickBooks open: releasing the session after %.0fs idle "
+                    "so they aren't held up",
+                    self.idle_seconds,
+                )
+            else:
+                log.info(
+                    "QB session idle for %.0fs (threshold %ds), stopping worker",
+                    self.idle_seconds,
+                    self.idle_timeout,
+                )
+            await self._kill_worker()
+            self._last_activity = 0.0
+            log.info("QB worker stopped — company file released")
+
+        if attended or not self.auto_close_qb:
+            return
+
+        # The idle timer measures *our* inactivity, not a person's. A
+        # QuickBooks with windows on screen is one somebody may be working
+        # in, and closing it is a force-kill — so leave it be.
+        from .dialogs import DialogError, qb_has_visible_windows
+        from .process import close_qb
+
+        try:
+            in_use = qb_has_visible_windows()
+        except DialogError as exc:
+            log.warning("auto_close_qb: could not check for QB windows: %s", exc)
+            in_use = True
+
+        if in_use:
             log.info(
-                "QB session idle for %.0fs (threshold %ds), stopping worker",
-                self.idle_seconds,
-                self.idle_timeout,
+                "auto_close_qb=True but QuickBooks has windows on screen — "
+                "leaving it alone, someone may be using it"
             )
-            async with self._lock:
-                await self._kill_worker()
-                self._last_activity = 0.0
-                log.info("QB worker stopped due to idle timeout — company file released")
-
-            if self.auto_close_qb:
-                from .dialogs import DialogError, qb_has_visible_windows
-                from .process import close_qb
-
-                # The idle timer measures *our* inactivity, not a person's. A
-                # QuickBooks with windows on screen is one somebody may be
-                # working in, and closing it is a force-kill — so leave it be.
-                try:
-                    in_use = qb_has_visible_windows()
-                except DialogError as exc:
-                    log.warning("auto_close_qb: could not check for QB windows: %s", exc)
-                    in_use = True
-
-                if in_use:
-                    log.info(
-                        "auto_close_qb=True but QuickBooks has windows on screen — "
-                        "leaving it alone, someone may be using it"
-                    )
-                else:
-                    log.info("auto_close_qb=True and QuickBooks has no UI — closing it")
-                    close_qb()
+        else:
+            log.info("auto_close_qb=True and QuickBooks has no UI — closing it")
+            close_qb()
 
     async def _start_worker(self) -> None:
         """Launch the COM worker subprocess.
